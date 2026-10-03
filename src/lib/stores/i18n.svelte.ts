@@ -1,10 +1,11 @@
 import { en } from '../locales/en';
 import { fr } from '../locales/fr';
+import { it } from '../locales/it';
 import { invoke } from '@tauri-apps/api/core';
 
-export type Locale = 'en' | 'fr';
+export type Locale = 'en' | 'fr' | 'it';
 
-const translations = { en, fr };
+const translations = { en, fr , it };
 
 class I18nStore {
   currentLocale = $state<Locale>('en');
@@ -13,7 +14,7 @@ class I18nStore {
     try {
       const settings = await invoke<Record<string, string>>("get_all_app_settings");
       if (settings && settings.language) {
-        if (settings.language === "en" || settings.language === "fr") {
+        if (settings.language === "en" || settings.language === "fr" || settings.language === "it") {
           this.currentLocale = settings.language as Locale;
         }
       }
