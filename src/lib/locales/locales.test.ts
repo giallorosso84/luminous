@@ -10,8 +10,8 @@ import { it } from "./it";
 function flatten(obj: Record<string, any>, prefix = ""): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const fullKey = prefix ? `${prefix}.${key}` : key;
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const fullKey = prefix? `${prefix}.${key}` : key;
+    if (value!== null && typeof value === "object" &&!Array.isArray(value)) {
       Object.assign(result, flatten(value, fullKey));
     } else {
       result[fullKey] = String(value);
@@ -30,152 +30,185 @@ function extractPlaceholders(str: string): string[] {
 }
 
 /**
- * Allowlist of keys whose French translation is legitimately identical to English
+ * Allowlist of keys whose French/Italian translation is legitimately identical to English
  * (e.g. loanwords, shared musical terminology, technical acronyms, brand names, or symbols).
  */
 const IDENTICAL_OK = new Set([
-  "equalizer.importPlaceholder", // Equalizer APO sample lines, same syntax in every language
-  "albumDetail.statsLine", // "{genre} · {year} · {duration}"
-  "albumTagEditor.genreField", // "Genre"
-  "artistDetail.albumsFilter", // "Albums ({count})"
-  "artistDetail.epsFilter", // "EPs ({count})"
-  "audioPipeline.bitPerfect", // "Bit-perfect"
-  "audioPipeline.codec", // "Codec"
-  "audioPipeline.normalizationGain", // "{gain} dB ({source})"
-  "audioPipeline.outputFormat", // "Format"
-  "auth.scrobbling", // "Scrobbling"
-  "collection.albums", // "Albums ({count})"
-  "collection.albumsCount", // "{count} albums"
-  "collection.columnActions", // "Actions"
-  "collection.columnAlbum", // "Album"
-  "collection.columnBpm", // "BPM"
-  "collection.columnFormat", // "Format"
-  "collection.columnGenre", // "Genre"
-  "collection.oneAlbum", // "1 album"
-  "collection.tableHeaderActions", // "Actions"
-  "collection.tableHeaderAlbum", // "Album"
-  "collection.tableHeaderBpm", // "BPM"
-  "collection.tableHeaderFormat", // "Format"
-  "collection.tableHeaderGenre", // "Genre"
-  "collection.tableHeaderMusicBrainzId", // "MBID"
-  "collection.tableHeaderTrack", // "#"
-  "discord.integrationTitle", // "Discord Rich Presence"
-  "equalizer.gain", // "Gain"
-  "equalizer.isoStandard", // "ISO 266:1997"
-  "equalizer.jazzPreset", // "Jazz"
-  "equalizer.modeLabel", // "Mode"
-  "equalizer.popPreset", // "Pop"
-  "equalizer.qFactor", // "Q"
-  "equalizer.rockPreset", // "Rock"
-  "loudness.modeAlbum", // "Album"
-  "lyrics.instrumentalBadge", // "Instrumental"
-  "organizer.placeholders", // "Variables"
-  "organizer.presetAlternative", // "Alternative"
-  "picard.customPathPlaceholder", // "C:\\Program Files\\MusicBrainz Picard\\picard.exe"
-  "picard.customPathPlaceholderLinux", // "/var/lib/flatpak/exports/bin/org.musicbrainz.Picard"
-  "picard.integrationTitle", // "MusicBrainz Picard"
-  "playerBar.albumLabel", // "Album"
-  "playerBar.channelsMono", // "Mono"
-  "playerBar.critiquebrainzSectionLabel", // "CritiqueBrainz"
-  "playerBar.dynamicRangeRms", // "RMS {value} dB"
-  "playerBar.formatLabel", // "Format"
-  "playerBar.genreLabel", // "Genre"
-  "playerBar.listenbrainzAlbumLabel", // "Album"
-  "playerBar.listenbrainzSectionLabel", // "ListenBrainz"
-  "playerBar.mbRatingVotes", // "({count} votes)"
-  "playerBar.musicbrainzReleaseTypeLabel", // "Type"
-  "playerBar.musicbrainzSectionLabel", // "MusicBrainz"
-  "playerBar.pause", // "Pause"
-  "playerBar.repeatAlbum", // "Album"
-  "playerBar.shuffleAlbums", // "Albums"
-  "playerBar.volume", // "Volume"
-  "playlists.activeBadgeLabel", // "Active"
-  "playlists.bpmAutoPlaylist", // "BPM"
-  "playlists.genreAutoPlaylist", // "Genre"
-  "playlists.tableHeaderTrack", // "#"
-  "settings.badgeColorCyan", // "Cyan"
-  "settings.badgeColorIndigo", // "Indigo"
-  "settings.badgeColorOrange", // "Orange"
-  "settings.badgeIconArchive", // "Archive"
-  "settings.badgeIconUsb", // "USB"
-  "settings.formatMsix", // "Microsoft Store"
-  "settings.languageEnglish", // "English"
-  "settings.languageFrench", // "Français"
-  "settings.simple", // "Simple"
-  "settings.statsAlbums", // "Albums"
-  "settings.tabSources", // "Sources"
-  "settings.webdavUrlPlaceholder", // "https://cloud.example.com/remote.php/webdav"
-  "shortcuts.groupNavigation", // "Navigation"
-  "sidebar.albums", // "Albums"
-  "sidebar.collection", // "Collection"
-  "sidebar.genres", // "Genres"
-  "smartPlaylistBuilder.fieldAlbum", // "Album"
-  "smartPlaylistBuilder.fieldBpm", // "BPM"
-  "smartPlaylistBuilder.fieldCompilation", // "Compilation"
-  "smartPlaylistBuilder.fieldGenre", // "Genre"
-  "smartPlaylistBuilder.mixWord", // "Mix"
-  "smartPlaylistBuilder.opEquals", // "="
-  "smartPlaylistBuilder.opGt", // ">"
-  "smartPlaylistBuilder.opGte", // ">="
-  "smartPlaylistBuilder.opLt", // "<"
-  "smartPlaylistBuilder.opLte", // "<="
-  "smartPlaylistBuilder.opNotEquals", // "!="
-  "songTags.viewGenre", // "Genre"
-  "stats.heatmapStatus", // "{date} — {minutes} min"
-  "stats.minuteCount", // "{count} min"
-  "stats.minuteUnderOne", // "< 1 min"
-  "tagEditor.albumField", // "Album"
-  "tagEditor.bpmField", // "BPM"
-  "tagEditor.genreField", // "Genre"
-  "themes.dynamic-artwork", // "✨ Luminous"
-  "themes.sabrina", // "Sabrina"
-  "topNav.searchSuggestions", // "Suggestions"
+  "equalizer.importPlaceholder",
+  "albumDetail.statsLine",
+  "albumTagEditor.genreField",
+  "artistDetail.albumsFilter",
+  "artistDetail.epsFilter",
+  "audioPipeline.bitPerfect",
+  "audioPipeline.codec",
+  "audioPipeline.normalizationGain",
+  "audioPipeline.outputFormat",
+  "auth.scrobbling",
+  "collection.albums",
+  "collection.albumsCount",
+  "collection.columnActions",
+  "collection.columnAlbum",
+  "collection.columnBpm",
+  "collection.columnFormat",
+  "collection.columnGenre",
+  "collection.oneAlbum",
+  "collection.tableHeaderActions",
+  "collection.tableHeaderAlbum",
+  "collection.tableHeaderBpm",
+  "collection.tableHeaderFormat",
+  "collection.tableHeaderGenre",
+  "collection.tableHeaderMusicBrainzId",
+  "collection.tableHeaderTrack",
+  "discord.integrationTitle",
+  "equalizer.gain",
+  "equalizer.isoStandard",
+  "equalizer.jazzPreset",
+  "equalizer.modeLabel",
+  "equalizer.popPreset",
+  "equalizer.qFactor",
+  "equalizer.rockPreset",
+  "loudness.modeAlbum",
+  "lyrics.instrumentalBadge",
+  "organizer.placeholders",
+  "organizer.presetAlternative",
+  "picard.customPathPlaceholderLinux",
+  "picard.integrationTitle",
+  "playerBar.albumLabel",
+  "playerBar.channelsMono",
+  "playerBar.critiquebrainzSectionLabel",
+  "playerBar.dynamicRangeRms",
+  "playerBar.formatLabel",
+  "playerBar.genreLabel",
+  "playerBar.listenbrainzAlbumLabel",
+  "playerBar.listenbrainzSectionLabel",
+  "playerBar.mbRatingVotes",
+  "playerBar.musicbrainzReleaseTypeLabel",
+  "playerBar.musicbrainzSectionLabel",
+  "playerBar.pause",
+  "playerBar.repeatAlbum",
+  "playerBar.shuffleAlbums",
+  "playerBar.volume",
+  "playlists.activeBadgeLabel",
+  "playlists.bpmAutoPlaylist",
+  "playlists.genreAutoPlaylist",
+  "playlists.tableHeaderTrack",
+  "settings.badgeColorCyan",
+  "settings.badgeColorIndigo",
+  "settings.badgeColorOrange",
+  "settings.badgeIconArchive",
+  "settings.badgeIconUsb",
+  "settings.formatMsix",
+  "settings.languageEnglish",
+  "settings.languageFrench",
+  "settings.simple",
+  "settings.statsAlbums",
+  "settings.tabSources",
+  "settings.webdavUrlPlaceholder",
+  "shortcuts.groupNavigation",
+  "sidebar.albums",
+  "sidebar.collection",
+  "sidebar.genres",
+  "smartPlaylistBuilder.fieldAlbum",
+  "smartPlaylistBuilder.fieldBpm",
+  "smartPlaylistBuilder.fieldCompilation",
+  "smartPlaylistBuilder.fieldGenre",
+  "smartPlaylistBuilder.mixWord",
+  "smartPlaylistBuilder.opEquals",
+  "smartPlaylistBuilder.opGt",
+  "smartPlaylistBuilder.opGte",
+  "smartPlaylistBuilder.opLt",
+  "smartPlaylistBuilder.opLte",
+  "smartPlaylistBuilder.opNotEquals",
+  "songTags.viewGenre",
+  "stats.heatmapStatus",
+  "stats.minuteCount",
+  "stats.minuteUnderOne",
+  "tagEditor.albumField",
+  "tagEditor.bpmField",
+  "tagEditor.genreField",
+  "themes.dynamic-artwork",
+  "themes.sabrina",
+  "topNav.searchSuggestions",
+  // Italian often keeps same as English for these
+  "settings.languageItalian",
 ]);
 
 describe("Locale translation completeness and integrity", () => {
   const flatEn = flatten(en);
   const flatFr = flatten(fr);
-  const flatFr = flatten(it);
+  const flatIt = flatten(it);
 
   it("every key in en.ts has a corresponding translation in fr.ts", () => {
-    const missingInFr = Object.keys(flatEn).filter((key) => !(key in flatFr));
+    const missingInFr = Object.keys(flatEn).filter((key) =>!(key in flatFr));
     expect(
       missingInFr,
-      `Missing French translations in src/lib/locales/fr.ts for the following keys:\n${missingInFr.map((k) => `  - ${k}`).join("\n")}`
+      `Missing French translations in src/lib/locales/fr.ts for the following keys:\n${missingInFr.map((k) => ` - ${k}`).join("\n")}`
+    ).toEqual([]);
+  });
+
+  it("every key in en.ts has a corresponding translation in it.ts", () => {
+    const missingInIt = Object.keys(flatEn).filter((key) =>!(key in flatIt));
+    expect(
+      missingInIt,
+      `Missing Italian translations in src/lib/locales/it.ts for the following keys:\n${missingInIt.map((k) => ` - ${k}`).join("\n")}`
     ).toEqual([]);
   });
 
   it("fr.ts contains no stale keys that do not exist in en.ts", () => {
-    const staleInFr = Object.keys(flatFr).filter((key) => !(key in flatEn));
+    const staleInFr = Object.keys(flatFr).filter((key) =>!(key in flatEn));
     expect(
       staleInFr,
-      `Stale keys found in src/lib/locales/fr.ts that no longer exist in en.ts:\n${staleInFr.map((k) => `  - ${k}`).join("\n")}`
+      `Stale keys found in src/lib/locales/fr.ts that no longer exist in en.ts:\n${staleInFr.map((k) => ` - ${k}`).join("\n")}`
+    ).toEqual([]);
+  });
+
+  it("it.ts contains no stale keys that do not exist in en.ts", () => {
+    const staleInIt = Object.keys(flatIt).filter((key) =>!(key in flatEn));
+    expect(
+      staleInIt,
+      `Stale keys found in src/lib/locales/it.ts that no longer exist in en.ts:\n${staleInIt.map((k) => ` - ${k}`).join("\n")}`
     ).toEqual([]);
   });
 
   it("fr.ts values differ from en.ts unless explicitly allowlisted in IDENTICAL_OK", () => {
     const untranslated = Object.keys(flatEn).filter((key) => {
-      return key in flatFr && flatEn[key] === flatFr[key] && !IDENTICAL_OK.has(key);
+      return key in flatFr && flatEn[key] === flatFr[key] &&!IDENTICAL_OK.has(key);
     });
 
     expect(
       untranslated,
       `The following French translations are identical to English. If this is legitimately the same word in French (or a symbol/brand name), add the key to IDENTICAL_OK in src/lib/locales/locales.test.ts:\n${untranslated
-        .map((k) => `  - ${k}: "${flatEn[k]}"`)
-        .join("\n")}`
+       .map((k) => ` - ${k}: "${flatEn[k]}"`)
+       .join("\n")}`
+    ).toEqual([]);
+  });
+
+  it("it.ts values differ from en.ts unless explicitly allowlisted in IDENTICAL_OK", () => {
+    const untranslated = Object.keys(flatEn).filter((key) => {
+      return key in flatIt && flatEn[key] === flatIt[key] &&!IDENTICAL_OK.has(key);
+    });
+
+    expect(
+      untranslated,
+      `The following Italian translations are identical to English. If this is legitimately the same word in Italian (or a symbol/brand name), add the key to IDENTICAL_OK in src/lib/locales/locales.test.ts:\n${untranslated
+       .map((k) => ` - ${k}: "${flatEn[k]}"`)
+       .join("\n")}`
     ).toEqual([]);
   });
 
   it("every key in IDENTICAL_OK is still identical and exists in en.ts", () => {
     const unneededInAllowlist = [...IDENTICAL_OK].filter((key) => {
-      return !(key in flatEn) || !(key in flatFr) || flatEn[key] !== flatFr[key];
+      const enExists = key in flatEn;
+      const frIdentical = key in flatFr && flatEn[key] === flatFr[key];
+      const itIdentical = key in flatIt && flatEn[key] === flatIt[key];
+      return!enExists || (!frIdentical &&!itIdentical);
     });
 
     expect(
       unneededInAllowlist,
       `The following keys in IDENTICAL_OK no longer match or no longer exist; remove them from IDENTICAL_OK in src/lib/locales/locales.test.ts:\n${unneededInAllowlist
-        .map((k) => `  - ${k}`)
-        .join("\n")}`
+       .map((k) => ` - ${k}`)
+       .join("\n")}`
     ).toEqual([]);
   });
 
@@ -186,7 +219,7 @@ describe("Locale translation completeness and integrity", () => {
       if (key in flatFr) {
         const enTokens = extractPlaceholders(flatEn[key]);
         const frTokens = extractPlaceholders(flatFr[key]);
-        if (enTokens.join(",") !== frTokens.join(",")) {
+        if (enTokens.join(",")!== frTokens.join(",")) {
           mismatches.push({ key, enTokens, frTokens });
         }
       }
@@ -195,8 +228,29 @@ describe("Locale translation completeness and integrity", () => {
     expect(
       mismatches,
       `Interpolation placeholders mismatch between en.ts and fr.ts:\n${mismatches
-        .map((m) => `  - ${m.key}: en has [${m.enTokens.join(", ")}], fr has [${m.frTokens.join(", ")}]`)
-        .join("\n")}`
+       .map((m) => ` - ${m.key}: en has [${m.enTokens.join(", ")}], fr has [${m.frTokens.join(", ")}]`)
+       .join("\n")}`
+    ).toEqual([]);
+  });
+
+  it("interpolation placeholder tokens match between en.ts and it.ts", () => {
+    const mismatches: { key: string; enTokens: string[]; itTokens: string[] }[] = [];
+
+    for (const key of Object.keys(flatEn)) {
+      if (key in flatIt) {
+        const enTokens = extractPlaceholders(flatEn[key]);
+        const itTokens = extractPlaceholders(flatIt[key]);
+        if (enTokens.join(",")!== itTokens.join(",")) {
+          mismatches.push({ key, enTokens, itTokens });
+        }
+      }
+    }
+
+    expect(
+      mismatches,
+      `Interpolation placeholders mismatch between en.ts and it.ts:\n${mismatches
+       .map((m) => ` - ${m.key}: en has [${m.enTokens.join(", ")}], it has [${m.itTokens.join(", ")}]`)
+       .join("\n")}`
     ).toEqual([]);
   });
 });
