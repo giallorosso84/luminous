@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { en } from "./en";
 import { fr } from "./fr";
+import { it } from "./it";
 
 /**
  * Recursively flattens a nested object into dotted key paths.
@@ -134,6 +135,7 @@ const IDENTICAL_OK = new Set([
 describe("Locale translation completeness and integrity", () => {
   const flatEn = flatten(en);
   const flatFr = flatten(fr);
+  const flatFr = flatten(it);
 
   it("every key in en.ts has a corresponding translation in fr.ts", () => {
     const missingInFr = Object.keys(flatEn).filter((key) => !(key in flatFr));
