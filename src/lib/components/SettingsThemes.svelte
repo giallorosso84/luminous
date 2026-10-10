@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { themeStore, PREDEFINED_THEMES, LUMINOUS_DARK_COLORS, LUMINOUS_LIGHT_COLORS, type ThemeColors, type Theme } from "../stores/theme.svelte";
+  import { themeStore, PREDEFINED_THEMES, LUMINOUS_DARK_COLORS, LUMINOUS_LIGHT_COLORS, withReadableText, type ThemeColors, type Theme } from "../stores/theme.svelte";
   import { i18n } from "../stores/i18n.svelte";
   import { toastStore } from "../stores/toast.svelte";
   import { onDestroy } from "svelte";
   import Button from "./Button.svelte";
   import Input from "./Input.svelte";
+  import AddonThemesSection from "./AddonThemesSection.svelte";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import {
     PaletteIcon as Palette,
@@ -86,7 +87,7 @@
     if (customColors && (isUserEditingBuilder || editingThemeId !== null)) {
       // deep read to trigger reactivity
       const _ = customColors["bg-main"] + customColors["bg-sidebar"] + customColors["bg-playerbar"] + customColors["color-accent"] + customColors["color-accent-hover"] + customColors["color-border"];
-      themeStore.applyThemeColorsPreview(customColors);
+      themeStore.applyThemeColorsPreview(withReadableText(customColors));
     }
   });
 
@@ -106,7 +107,7 @@
       await themeStore.addCustomTheme({
         id: editingThemeId,
         name: newThemeName.trim(),
-        colors: { ...customColors },
+        colors: withReadableText(customColors),
         isCustom: true
       });
       editingThemeId = null;
@@ -116,7 +117,7 @@
       await themeStore.addCustomTheme({
         id,
         name: newThemeName.trim(),
-        colors: { ...customColors },
+        colors: withReadableText(customColors),
         isCustom: true
       });
       newThemeName = "";
@@ -175,7 +176,7 @@
 
   <div>
     <h4 class="text-xs text-brand-text-secondary font-bold tracking-wider uppercase mb-3">{i18n.t('settings.dynamicThemes', {}, 'Dynamic Themes')}</h4>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 @xl:grid-cols-2 gap-4">
       {#each DYNAMIC_THEMES as theme}
         {@const previewColors = getPreviewColors(theme)}
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -234,6 +235,8 @@
       {/each}
     </div>
   </div>
+
+  <AddonThemesSection />
 
   <div>
     <h4 class="text-xs text-brand-text-secondary font-bold tracking-wider uppercase mb-3">{i18n.t('settings.predefinedThemes', {}, 'Predefined Themes')}</h4>
@@ -348,7 +351,7 @@
     </div>
 
     <div class="space-y-5">
-        <div class="flex flex-col sm:flex-row gap-4 sm:items-end justify-between">
+        <div class="flex flex-col @xl:flex-row gap-4 @xl:items-end justify-between">
           <div class="flex flex-col gap-1.5 flex-1 max-w-sm">
             <label for="theme-name-input" class="text-xs text-brand-text-secondary font-semibold">{i18n.t('settings.themeNameLabel')}</label>
             <Input

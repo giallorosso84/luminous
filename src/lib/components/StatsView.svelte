@@ -121,9 +121,7 @@
         {#if summary}
           <div class="flex items-center gap-2 shrink-0">
             <span class="text-sm font-medium text-brand-text-secondary">
-              {summary.total_minutes === 1
-                ? i18n.t("stats.totalMinutesOne", {}, "1 minute listened")
-                : i18n.t("stats.totalMinutes", { count: summary.total_minutes }, `${summary.total_minutes} minutes listened`)}
+              {i18n.plural("stats.totalMinutes", summary.total_minutes)}
             </span>
             <button
               onclick={() => { showShareModal = true; }}
@@ -136,7 +134,7 @@
         {/if}
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4 items-start">
+      <div class="grid grid-cols-1 @5xl:grid-cols-2 gap-6 mt-4 items-start">
         <ListeningHeatmap {range} />
         <div class="bg-brand-sidebar border border-brand-border/60 rounded-xl p-4 flex flex-col">
           <h2 class="text-xl font-semibold text-brand-text-primary mb-3 shrink-0">
@@ -168,23 +166,24 @@
       </div>
     </div>
 
-    {#if loading}
+    {#if loading && !summary}
       <div class="flex items-center justify-center h-64">
         <LoadingSpinner label={i18n.t("stats.loading", {}, "Loading stats...")} />
       </div>
-    {:else if !summary || summary.play_timestamps.length === 0}
+    {:else if (!loading && (!summary || summary.play_timestamps.length === 0))}
       <div class="flex items-center justify-center h-64 text-brand-text-secondary text-sm">
         {i18n.t("stats.empty", {}, "No listening history for this range yet.")}
       </div>
     {:else}
       <div class="@container">
-        <div class="grid grid-cols-1 @min-[784px]:grid-cols-2 @min-[1188px]:grid-cols-3 @min-[1392px]:grid-cols-4 gap-6">
+        <div class="grid grid-cols-1 @3xl:grid-cols-2 @6xl:grid-cols-3 @7xl:grid-cols-4 gap-6">
           {#each SECTIONS as section (section.key)}
             <div class="bg-brand-sidebar border border-brand-border/60 rounded-xl p-4">
               <TopTenList
                 title={section.title()}
                 items={itemsFor(section.key)}
                 kind={section.kind}
+                showAccentBars={true}
                 onShareClick={() => { shareSection = { title: section.title(), kind: section.kind, items: itemsFor(section.key) }; }}
               />
             </div>

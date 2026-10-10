@@ -147,7 +147,7 @@
             class="absolute inset-0 z-10 flex items-center justify-center bg-black/50 opacity-0 group-hover/artwork:opacity-100 transition-opacity duration-200 cursor-pointer"
             onclick={handleOpenImages}
             title={extraArtworkCount > 0
-              ? i18n.t("common.openImagesCount", { count: extraArtworkCount })
+              ? i18n.plural("common.openImagesCount", extraArtworkCount)
               : i18n.t("common.openImages")}
           >
             <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-black/60 text-white text-sm font-medium">
@@ -196,16 +196,19 @@
   .cover-item:nth-child(n + 4) {
     display: none;
   }
+  /* COVER_STACK_FOURTH_COVER_PX (constants.ts) */
   @container (min-width: 150px) {
     .cover-item:nth-child(4) {
       display: block;
     }
   }
+  /* COVER_STACK_FIFTH_COVER_PX */
   @container (min-width: 180px) {
     .cover-item:nth-child(5) {
       display: block;
     }
   }
+  /* COVER_STACK_SIXTH_COVER_PX */
   @container (min-width: 210px) {
     .cover-item:nth-child(6) {
       display: block;

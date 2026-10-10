@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar.svelte";
 import { collectionStore } from "../stores/collection.svelte";
 import { navigationStore } from "../stores/navigation.svelte";
 import { playlistsStore } from "../stores/playlists.svelte";
+import { pinnedStore } from "../stores/pinned.svelte";
 import { i18n } from "../stores/i18n.svelte";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -18,7 +19,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 describe("Sidebar.svelte", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    i18n.currentLocale = "en";
+    i18n.currentLocale = "en-CA";
     navigationStore.activeTab = "collection";
     navigationStore.activeSubTab = "songs";
     collectionStore.stats = {
@@ -29,6 +30,7 @@ describe("Sidebar.svelte", () => {
       total_filesize_bytes: 1000,
       album_art_bytes: 0,
       artist_art_bytes: 0,
+      thumbnail_bytes: 0,
     };
   });
 
@@ -92,7 +94,7 @@ describe("Sidebar.svelte", () => {
   });
 
   it("formats collection numbers according to the active locale", () => {
-    i18n.currentLocale = "fr";
+    i18n.currentLocale = "fr-CA";
     collectionStore.stats = {
       ...collectionStore.stats,
       total_songs: 3095,
@@ -101,4 +103,31 @@ describe("Sidebar.svelte", () => {
     const songsBtn = getByRole("button", { name: /chansons|songs/i });
     expect(songsBtn.textContent).toMatch(/3[\s\u202f]095/);
   });
+
+  it("renders pinned navigation items in expanded and collapsed sidebar modes", async () => {
+    pinnedStore.items = [
+      {
+        type: "album",
+        album: {
+          album: "OK Computer",
+          artist: "Radiohead",
+          rating: 5,
+        } as any,
+      },
+    ];
+
+    // Expanded sidebar
+    const { getByText, queryByText, getAllByTitle, rerender } = render(Sidebar, { props: { width: 256 } });
+    expect(getByText("OK Computer")).toBeInTheDocument();
+    expect(getByText("Radiohead")).toBeInTheDocument();
+
+    // Collapsed sidebar
+    rerender({ width: 64 });
+    await vi.waitFor(() => {
+      expect(queryByText("Radiohead")).not.toBeInTheDocument();
+    });
+    const pinnedBtn = getAllByTitle("OK Computer • Radiohead");
+    expect(pinnedBtn.length).toBeGreaterThan(0);
+  });
 });
+

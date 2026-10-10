@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { defineConfig } from "vitest/config";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import adapter from "@sveltejs/adapter-static";
 import tailwindcss from "@tailwindcss/vite";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { tauriIpcMockPlugin } from "./scripts/vite-mock-plugin.ts";
@@ -64,12 +66,46 @@ function safeTailwindcss() {
   });
 }
 
+const isTest = process.env.VITEST !== undefined || process.env.NODE_ENV === "test";
+
+/**
+ * Configure Svelte compilation pipeline based on execution role.
+ *
+ * In application mode (dev/build), SvelteKit's static adapter SPA plugin handles
+ * routing, prerendering, and bundling for Tauri.
+ *
+ * In test mode (Vitest), the dedicated Svelte component compiler plugin is used
+ * directly, bypassing SvelteKit's SSR runner orchestration.
+ */
+function resolveSveltePlugins() {
+  if (isTest) {
+    return [svelte(), svelteTesting()];
+  }
+  return [
+    sveltekit({
+      adapter: adapter({
+        fallback: "index.html",
+      }),
+    }),
+  ];
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  resolve: {
+    alias: {
+      $lib: path.resolve(projectRoot, "src/lib"),
+    },
+  },
   css: {
     devSourcemap: false,
   },
   build: {
+    // The bundle is loaded from disk by Tauri, not over a network, so the
+    // default 500 kB "large chunk" advice (about download time) doesn't apply.
+    // The SSR prerender output (`.svelte-kit/output/server`, never shipped) has a
+    // ~1.5 MB shared chunk, so the limit sits above that.
+    chunkSizeWarningLimit: 2000,
     // Silence Rolldown's `[PLUGIN_TIMINGS]` warnings (Vite 8 defaults to
     // warning when a plugin's transform takes a while during build).
     rolldownOptions: {
@@ -81,7 +117,7 @@ export default defineConfig(async () => ({
   define: {
     "import.meta.env.VITE_COMMIT_HASH": JSON.stringify(commitHash),
   },
-  plugins: [sveltekit(), safeTailwindcss(), svelteTesting(), tauriIpcMockPlugin()],
+  plugins: [...resolveSveltePlugins(), safeTailwindcss(), tauriIpcMockPlugin()],
 
   // These are only reachable once specific views actually render (icons,
   // Tauri API shims, the virtualized song list), not from the initial
@@ -110,6 +146,7 @@ export default defineConfig(async () => ({
   test: {
     globals: true,
     include: ["src/**/*.{test,spec}.{js,ts}", "scripts/**/*.{test,spec}.{js,ts}"],
+    exclude: ["scripts/throwaway-profile.test.ts", "scripts/devtools-driver.test.ts"],
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     testTimeout: 15000,

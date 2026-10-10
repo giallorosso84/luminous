@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { untrack } from "svelte";
   import {
     MusicNotesIcon as Music,
     DiscIcon as Disc,
@@ -9,6 +10,7 @@
   import { i18n } from "../stores/i18n.svelte";
   import { prefs } from "../stores/prefs.svelte";
   import { collectionStore } from "../stores/collection.svelte";
+  import { sizedCoverUrl } from "../utils/covers";
 
   interface Props {
     songId: number | undefined;
@@ -35,6 +37,28 @@
   let isLoading = $state(false);
   let hasFailed = $state(false);
   let loadToken = 0;
+  // The box's widest measured width in device pixels, so a card loads a
+  // cover copy near its drawn size (#1528). Never shrinks, so a narrowing
+  // window doesn't refetch; null until measured, and the <img> waits for it
+  // so it never starts loading a copy of the wrong size.
+  let box = $state<HTMLDivElement>();
+  let boxPixels = $state<number | null>(null);
+  let displaySrc = $derived(
+    imgSrc && boxPixels !== null && !fullResolution ? sizedCoverUrl(imgSrc, boxPixels) : imgSrc
+  );
+
+  $effect(() => {
+    const node = box;
+    if (!node) return;
+    const measure = () => {
+      const pixels = node.clientWidth * window.devicePixelRatio;
+      if (boxPixels === null || pixels > boxPixels) boxPixels = pixels;
+    };
+    untrack(measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => ro.disconnect();
+  });
 
   async function loadCoverArt() {
     const token = ++loadToken;
@@ -44,7 +68,7 @@
       return;
     }
     if (artAutomatic) {
-      imgSrc = resolveArtUrl(artAutomatic);
+      imgSrc = resolveArtUrl(artAutomatic, fullResolution);
       hasFailed = false;
       // The cache holds a downscaled copy; show it at once, then swap in the
       // original embedded picture for large views.
@@ -85,7 +109,7 @@
   }
 
   async function triggerRemoteFetch() {
-    if (songId === undefined) return;
+    if (songId === undefined || !prefs.onlineEnabled) return;
     try {
       const uri = await invoke<string | null>("fetch_remote_cover", { songId });
       if (uri) {
@@ -114,15 +138,17 @@
     const _full = fullResolution;
     // A fanart.tv cover arriving or its toggle changing re-resolves (#1277).
     const _fanart = prefs.fanartFetchAlbumCover;
+    // Going Offline hides fanart.tv covers; going Online retries missing art (#1398).
+    const _online = prefs.onlineEnabled;
     const _version = collectionStore.coverArtVersion;
     loadCoverArt();
   });
 </script>
 
-<div class="{sizeClass} relative overflow-hidden bg-brand-sidebar border border-brand-border flex items-center justify-center text-brand-text-secondary group shrink-0">
-  {#if imgSrc && !hasFailed}
+<div bind:this={box} class="{sizeClass} relative overflow-hidden bg-brand-sidebar border border-brand-border flex items-center justify-center text-brand-text-secondary group shrink-0">
+  {#if displaySrc && boxPixels !== null && !hasFailed}
     <img
-      src={imgSrc}
+      src={displaySrc}
       alt={i18n.t('common.albumArtAlt')}
       loading="lazy"
       class="w-full h-full object-cover transition-opacity duration-300 {isLoading ? 'opacity-0' : 'opacity-100'} {animateSpin ? 'animate-spin' : ''}"

@@ -8,7 +8,7 @@ import { toastStore } from "./toast.svelte";
 import { playlistsStore } from "./playlists.svelte";
 import { windowLayoutStore } from "./windowLayout.svelte";
 import { i18n } from "./i18n.svelte";
-import { isRemotePath } from "../utils/remoteSource";
+import { isRemotePath, shortenQuotedUrls } from "../utils/remoteSource";
 import { shuffleArray } from "../utils/shuffle";
 
 export interface CompletedSession {
@@ -116,7 +116,7 @@ export class PlayerStore {
               ? [...this._lastSessionSongIds]
               : [...this._playedSongIdsHistory];
 
-          const contextName = oldContextName || (isQueue ? i18n.t("queue.title", {}, "Queue") : "");
+          const contextName = oldContextName || (isQueue ? i18n.t("playerBar.queueTitle") : "");
           this.completedSession = {
             contextName,
             isQueue,
@@ -238,7 +238,7 @@ export class PlayerStore {
       // A remote song (WebDAV/OpenSubsonic, #916) fails for reasons other than
       // a missing file — bad credentials, server down — so surface the
       // backend's reason instead of "file not found".
-      const reason = message?.trim().replace(/[.\s]+$/, "");
+      const reason = message && shortenQuotedUrls(message.trim().replace(/[.\s]+$/, ""));
       if (isRemotePath(path) && reason) {
         toastStore.show(
           i18n.t("playerBar.trackSkippedRemoteToast", { title, message: reason }, `Couldn't play "${title}" — ${reason}. Skipped.`),
@@ -252,7 +252,7 @@ export class PlayerStore {
       }
     } else {
       toastStore.show(
-        i18n.t("playerBar.tracksSkippedToast", { count: failures.length }, `Skipped ${failures.length} unavailable tracks.`),
+        i18n.plural("playerBar.tracksSkippedToast", failures.length),
         "error"
       );
     }
@@ -318,7 +318,7 @@ export class PlayerStore {
     }
     if (outcome.skipped > 0) {
       toastStore.show(
-        i18n.t("playerBar.tracksSkippedToast", { count: outcome.skipped }, `Skipped ${outcome.skipped} unavailable tracks.`),
+        i18n.plural("playerBar.tracksSkippedToast", outcome.skipped),
         "error"
       );
     }
@@ -344,7 +344,7 @@ export class PlayerStore {
     }
     if (outcome.skipped > 0) {
       toastStore.show(
-        i18n.t("playerBar.tracksSkippedToast", { count: outcome.skipped }, `Skipped ${outcome.skipped} unavailable tracks.`),
+        i18n.plural("playerBar.tracksSkippedToast", outcome.skipped),
         "error"
       );
     }
@@ -364,15 +364,15 @@ export class PlayerStore {
         title: i18n.t('topNav.openFilesTitle', {}, "Open Audio Files or Playlists"),
         filters: [
           {
-            name: "Supported Files",
+            name: i18n.t("topNav.fileFilterSupported"),
             extensions: ["mp3", "flac", "ogg", "opus", "m4a", "aac", "alac", "wav", "aiff", "aif", "wv", "mpc", "ape", "tta", "dsf", "dff", "asf", "wma", "m4b", "m3u", "m3u8", "pls", "xspf"]
           },
           {
-            name: "Audio Files",
+            name: i18n.t("topNav.fileFilterAudio"),
             extensions: ["mp3", "flac", "ogg", "opus", "m4a", "aac", "alac", "wav", "aiff", "aif", "wv", "mpc", "ape", "tta", "dsf", "dff", "asf", "wma", "m4b"]
           },
           {
-            name: "Playlists",
+            name: i18n.t("topNav.fileFilterPlaylists"),
             extensions: ["m3u", "m3u8", "pls", "xspf"]
           }
         ]
@@ -452,7 +452,7 @@ export class PlayerStore {
     const queuePl = await playlistsStore.requireQueue();
     const shuffledIds = shuffleArray(librarySongs.map((s) => s.id));
     await this.setShuffleMode("off");
-    await this.playSongs(shuffledIds, 0, queuePl?.id, undefined, i18n.t("queue.title", {}, "Queue"));
+    await this.playSongs(shuffledIds, 0, queuePl?.id, undefined, i18n.t("playerBar.queueTitle"));
   }
 
   async playPlaylistItem(playlistId: number, itemIndex: number, context?: PlayContext) {

@@ -13,12 +13,14 @@
   import Button from "./Button.svelte";
   import Toggle from "./Toggle.svelte";
   import { i18n } from "../stores/i18n.svelte";
+  import { formatHoursMinutes } from "../utils/formatters";
   import { toastStore } from "../stores/toast.svelte";
   import { collectionStore } from "../stores/collection.svelte";
   import { extractColorsFromImage, themeStore } from "../stores/theme.svelte";
   import { playerStore } from "../stores/player.svelte";
   import { getCoverArtUrl, resolveArtUrl, type Song, type StatsSummary, type StatsRange, type StatsTopItem } from "../types";
   import { getArtistAlbums, classifyRelease } from "../utils/artist";
+  import { statsBarPercents } from "../utils/statsBars";
   import { songsToCoverStack, getArtistCoverStack, resolveArtistPortraitUrl, type CoverStackItem } from "../utils/covers";
   import { bucketListeningClock } from "../utils/listeningClock";
   import type { DaypartBucket } from "../utils/daypart";
@@ -27,6 +29,7 @@
     rasterizeShareCard,
     rasterizeStatsShareCard,
     toDataUri,
+    MOSAIC_FIT_MAX_COVERS,
     blobToBase64,
     type ShareAspectRatio,
     type ShareCardTheme,
@@ -60,11 +63,13 @@
   const SETTING_THEME = "share_card_theme";
   const SETTING_INCLUDE_TRACK_LIST = "share_card_include_track_list";
   const SETTING_INCLUDE_LIBRARY_INFO = "share_card_include_library_info";
+  const SETTING_INCLUDE_BARS = "share_card_include_bars";
 
   let aspectRatio = $state<ShareAspectRatio>("1:1");
   let theme = $state<ShareCardTheme>("dark");
   let includeTrackList = $state(true);
   let includeLibraryInfo = $state(true);
+  let includeBars = $state(true);
   let settingsLoaded = $state(false);
   let previewUrl = $state<string | null>(null);
   let rendering = $state(false);
@@ -89,6 +94,10 @@
       const savedLibraryInfo = settings[SETTING_INCLUDE_LIBRARY_INFO];
       if (savedLibraryInfo === "true" || savedLibraryInfo === "false") {
         includeLibraryInfo = savedLibraryInfo === "true";
+      }
+      const savedBars = settings[SETTING_INCLUDE_BARS];
+      if (savedBars === "true" || savedBars === "false") {
+        includeBars = savedBars === "true";
       }
     } catch (err) {
       console.error("Failed to load share card settings:", err);
@@ -117,6 +126,11 @@
     void invoke("set_app_setting", { key: SETTING_INCLUDE_LIBRARY_INFO, value: String(includeLibraryInfo) });
   });
 
+  $effect(() => {
+    if (!settingsLoaded) return;
+    void invoke("set_app_setting", { key: SETTING_INCLUDE_BARS, value: String(includeBars) });
+  });
+
   // Only the album/playlist entity cards have a track list to toggle —
   // artist and stats cards never show one, and a stats-section card's list
   // *is* the whole card, so it's always shown with no toggle to hide it.
@@ -127,6 +141,8 @@
   // clean name-and-image card — independent of the playlist card's own
   // track-list toggle.
   let showLibraryToggle = $derived(entity.kind === "artist" || entity.kind === "playlist");
+  // Only the ranked stats cards have proportional bars to hide (#1475).
+  let showBarsToggle = $derived(entity.kind === "stats" || entity.kind === "stats-section");
 
   let albumItem = $derived(
     entity.kind === "album" ? collectionStore.albums.find((a) => a.album === entity.albumName) || null : null
@@ -208,9 +224,15 @@
     });
   });
 
+  /** Pairs each ranked item with its proportional-bar percent (#1475), shared with the Stats lists. */
+  function withBarPercents(items: StatsTopItem[]) {
+    const percents = statsBarPercents(items);
+    return items.map((it, i) => ({ ...it, percent: percents[i] }));
+  }
+
   let trackCards = $derived<ShareCardTrack[]>(
     entity.kind === "stats-section"
-      ? entity.items.slice(0, 10).map((it, i) => ({ number: i + 1, title: it.label, secondary: it.secondary }))
+      ? withBarPercents(entity.items.slice(0, 10)).map((it, i) => ({ number: i + 1, title: it.label, secondary: it.secondary, percent: includeBars ? it.percent : null }))
       : entity.kind === "playlist"
         // A playlist spans multiple artists, unlike an album, so each row
         // needs its own artist to be legible on its own.
@@ -220,10 +242,7 @@
 
   let totalDurationLabel = $derived.by(() => {
     const totalNs = songs.reduce((sum, s) => sum + (s.length_nanosec ?? 0), 0);
-    const totalMinutes = Math.round(totalNs / 1_000_000_000 / 60);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    return formatHoursMinutes(Math.round(totalNs / 1_000_000_000 / 60));
   });
 
   let cardTitle = $derived.by(() => {
@@ -256,13 +275,11 @@
     if (entity.kind === "album" && albumItem?.year) parts.push(String(albumItem.year));
     if (entity.kind === "artist") {
       parts.push(
-        artistFullAlbumCount === 1
-          ? i18n.t("collection.oneAlbum")
-          : i18n.t("collection.albumsCount", { count: artistFullAlbumCount })
+        i18n.plural("collection.albumsCount", artistFullAlbumCount)
       );
     }
     parts.push(
-      songs.length === 1 ? i18n.t("playlists.oneSong") : i18n.t("playlists.songsCount", { count: songs.length })
+      i18n.plural("playlists.songsCount", songs.length)
     );
     if (totalDurationLabel) parts.push(totalDurationLabel);
     return parts.join(" • ");
@@ -323,7 +340,7 @@
   async function resolveTopItemsCoverUrls(
     items: StatsTopItem[],
     kind: "artist" | "album" | "song" | "genre",
-    maxCovers = 5
+    maxCovers = MOSAIC_FIT_MAX_COVERS
   ): Promise<string[]> {
     if (kind === "genre") return [];
     const candidates = items.slice(0, 10);
@@ -368,7 +385,7 @@
         // exists, it serves as the big tile and the artist's album covers fill
         // the mosaic quarter tiles (or the fanned stack behind it). When no
         // portrait exists, the album covers themselves form the stack/mosaic.
-        const stackItems = getArtistCoverStack(artistAlbums, artistSongs, 5);
+        const stackItems = getArtistCoverStack(artistAlbums, artistSongs, MOSAIC_FIT_MAX_COVERS);
         const urls = (await Promise.all(stackItems.map(resolveCoverUrl))).filter((u): u is string => !!u);
         if (!cancelled) {
           if (artistPortraitUrl) {
@@ -380,7 +397,7 @@
           }
         }
       } else if (entity.kind === "playlist") {
-        const stackItems = songsToCoverStack(entity.songs, 5);
+        const stackItems = songsToCoverStack(entity.songs, MOSAIC_FIT_MAX_COVERS);
         const urls = (await Promise.all(stackItems.map(resolveCoverUrl))).filter((u): u is string => !!u);
         if (!cancelled) {
           coverUrl = urls[0] ?? null;
@@ -469,9 +486,7 @@
   let statsTotalMinutesLabel = $derived.by(() => {
     if (entity.kind !== "stats") return "";
     const n = entity.summary.total_minutes;
-    return n === 1
-      ? i18n.t("stats.totalMinutesOne", {}, "1 minute listened")
-      : i18n.t("stats.totalMinutes", { count: n }, `${n} minutes listened`);
+    return i18n.plural("stats.totalMinutes", n);
   });
 
   // Cover stacks for the summary card's Top Artists/Albums/Songs cells
@@ -527,7 +542,7 @@
     if (entity.kind !== "stats") return [];
     const s = entity.summary;
     const toItems = (items: StatsTopItem[]) =>
-      items.slice(0, 5).map((it) => ({ label: it.label, secondary: it.secondary }));
+      withBarPercents(items.slice(0, 5)).map((it) => ({ label: it.label, secondary: it.secondary, percent: includeBars ? it.percent : null }));
     return [
       { title: i18n.t("stats.topArtists", {}, "Top Artists"), items: toItems(s.top_artists), coverStackDataUris: statsArtistsCoverStack },
       { title: i18n.t("stats.topAlbums", {}, "Top Albums"), items: toItems(s.top_albums), coverStackDataUris: statsAlbumsCoverStack },
@@ -647,15 +662,11 @@
   async function handleCopy() {
     exporting = true;
     try {
-      // Hand ClipboardItem a Promise and call write() synchronously in the click
-      // handler. Awaiting the render first lets the user-activation window expire
-      // (WebKitGTK rejects the write), which made the first Copy after opening the
-      // modal fail whenever the preview hadn't finished rendering yet.
-      const blobPromise = getExportBlob().then((blob) => {
-        if (!blob) throw new Error("render failed");
-        return blob;
-      });
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+      // Native clipboard: WebKitGTK's navigator.clipboard.write() rejects images
+      // outside a fresh user gesture, so the first Copy on Linux failed.
+      const blob = await getExportBlob();
+      if (!blob) throw new Error("render failed");
+      await invoke("copy_share_card_image", { dataBase64: await blobToBase64(blob) });
       toastStore.show(i18n.t("shareModal.copySuccess"));
     } catch (err) {
       console.error("Failed to copy share card:", err);
@@ -761,6 +772,17 @@
               checked={includeTrackList}
               onchange={(v) => (includeTrackList = v)}
               label={i18n.t("shareModal.trackListToggle")}
+              showOnOffLabel={false}
+            />
+          </div>
+        {/if}
+        {#if showBarsToggle}
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-brand-text-secondary text-right whitespace-nowrap">{i18n.t("shareModal.barsToggle")}</span>
+            <Toggle
+              checked={includeBars}
+              onchange={(v) => (includeBars = v)}
+              label={i18n.t("shareModal.barsToggle")}
               showOnOffLabel={false}
             />
           </div>

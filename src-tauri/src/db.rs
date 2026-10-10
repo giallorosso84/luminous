@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub type DbPool = Pool<SqliteConnectionManager>;
 
 /// Current schema version. Increment when adding migrations.
-pub const CURRENT_SCHEMA_VERSION: i32 = 56;
+pub const CURRENT_SCHEMA_VERSION: i32 = 61;
 
 struct Migration {
     version: i32,
@@ -475,7 +475,98 @@ const MIGRATIONS: &[Migration] = &[
         description: "separate preamp and preset per EQ mode (#1336)",
         apply: migrate_eq_mode_states,
     },
+    Migration {
+        version: 57,
+        description: "artist_events_cache table for artist tour dates and concerts (#1431)",
+        apply: |conn| Ok(conn.execute_batch(MIGRATION_57)?),
+    },
+    Migration {
+        version: 58,
+        description: "webdav_dir_cache table so WebDAV sync can skip unchanged folders (#1483)",
+        apply: |conn| {
+            conn.execute_batch(MIGRATION_58)?;
+            let has_last_full_listing_at: bool = conn
+                .prepare(
+                    "SELECT 1 FROM pragma_table_info('webdav_servers') WHERE name = 'last_full_listing_at'",
+                )?
+                .exists([])?;
+            if !has_last_full_listing_at {
+                conn.execute_batch(
+                    "ALTER TABLE webdav_servers ADD COLUMN last_full_listing_at INTEGER;",
+                )?;
+            }
+            Ok(())
+        },
+    },
+    Migration {
+        version: 59,
+        description: "strip embedded credentials from WebDAV song URLs (#1492)",
+        apply: migrate_strip_webdav_song_credentials,
+    },
+    Migration {
+        version: 60,
+        description: "webdav_cache.missed_syncs so rows for files gone from the server can be pruned (#1494)",
+        apply: |conn| {
+            let has_missed_syncs: bool = conn
+                .prepare(
+                    "SELECT 1 FROM pragma_table_info('webdav_cache') WHERE name = 'missed_syncs'",
+                )?
+                .exists([])?;
+            if !has_missed_syncs {
+                conn.execute_batch(
+                    "ALTER TABLE webdav_cache ADD COLUMN missed_syncs INTEGER NOT NULL DEFAULT 0;",
+                )?;
+            }
+            Ok(())
+        },
+    },
+    Migration {
+        version: 61,
+        description: "wikipedia_lang on artist_context_enrichment and critiquebrainz_lang on context_enrichment so cached context is re-fetched when the UI language changes (#1480)",
+        apply: |conn| {
+            for (table, column) in [
+                ("artist_context_enrichment", "wikipedia_lang"),
+                ("context_enrichment", "critiquebrainz_lang"),
+            ] {
+                let has_column: bool = conn
+                    .prepare(&format!(
+                        "SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{column}'"
+                    ))?
+                    .exists([])?;
+                if !has_column {
+                    conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} TEXT;"))?;
+                }
+            }
+            Ok(())
+        },
+    },
 ];
+
+/// Migration 59: WebDAV songs used to store `user:pass@host/...` as their
+/// path/url/stream_url. Playback now looks credentials up from the saved
+/// server, so drop the userinfo from existing rows. A row whose credential-free
+/// path is already taken is left for the next sync to reconcile.
+fn migrate_strip_webdav_song_credentials(conn: &rusqlite::Connection) -> Result<()> {
+    let rows: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT id, path FROM songs
+             WHERE source = ?1 AND (path LIKE 'http://%@%' OR path LIKE 'https://%@%')",
+        )?
+        .query_map([crate::models::SongSource::WEBDAV_ID], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    for (id, path) in rows {
+        let clean = crate::webdav::strip_url_credentials(&path);
+        if clean != path {
+            conn.execute(
+                "UPDATE OR IGNORE songs SET path = ?1, url = ?1, stream_url = ?1 WHERE id = ?2",
+                rusqlite::params![clean, id],
+            )?;
+        }
+    }
+    Ok(())
+}
 
 /// Migration 53: the legacy parametric layout was a positional list of
 /// `{freq, gain_db, q}` whose first band was implicitly a low shelf and last a
@@ -693,11 +784,26 @@ impl Database {
             schema_version: 0,
         };
         let schema_version = db.run_migrations()?;
+        db.reset_stale_sync_status();
 
         Ok(Self {
             schema_version,
             ..db
         })
+    }
+
+    /// Nothing can be syncing when the app has only just started, so a
+    /// `syncing` flag left by a crash or forced close is stale (#1491).
+    fn reset_stale_sync_status(&self) {
+        let Ok(conn) = self.pool.get() else { return };
+        for table in ["webdav_servers", "subsonic_servers"] {
+            if let Err(e) = conn.execute(
+                &format!("UPDATE {table} SET sync_status = 'idle' WHERE sync_status = 'syncing'"),
+                [],
+            ) {
+                log::warn!("Failed to reset stale sync status in {table}: {e}");
+            }
+        }
     }
 
     /// Runs any migrations this build knows about and returns the resulting schema
@@ -2038,6 +2144,25 @@ CREATE INDEX IF NOT EXISTS idx_songs_loved ON songs(loved);
 UPDATE songs SET loved = 1 WHERE rating >= 4.0;
 ";
 
+// Migration 57: artist_events_cache table for artist tour dates and concerts (#1431)
+const MIGRATION_57: &str = "
+CREATE TABLE IF NOT EXISTS artist_events_cache (
+    artist_mbid TEXT PRIMARY KEY,
+    events_json TEXT NOT NULL DEFAULT '[]',
+    fetched_at INTEGER NOT NULL
+);
+";
+
+// Migration 58: folder etags from the last complete WebDAV sync (#1483).
+const MIGRATION_58: &str = "
+CREATE TABLE IF NOT EXISTS webdav_dir_cache (
+    server_id   INTEGER NOT NULL REFERENCES webdav_servers(id) ON DELETE CASCADE,
+    remote_path TEXT NOT NULL,
+    etag        TEXT NOT NULL,
+    PRIMARY KEY (server_id, remote_path)
+);
+";
+
 fn seed_artist_tag_hierarchy(conn: &rusqlite::Connection) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT json_each.value
@@ -2584,6 +2709,39 @@ mod tests {
         assert_eq!(sync_interval_minutes, 15);
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn startup_resets_stale_syncing_status() {
+        let temp_dir_guard = tempfile::Builder::new()
+            .prefix("luminous_stale_sync_test_")
+            .tempdir()
+            .unwrap();
+        let temp_dir = temp_dir_guard.path().to_path_buf();
+        {
+            let db = Database::new(temp_dir.clone()).unwrap();
+            let conn = db.pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO subsonic_servers (name, url, username, password, sync_status) VALUES ('s', 'https://x', 'u', 'p', 'syncing')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO webdav_servers (name, url, sync_status) VALUES ('w', 'https://x', 'syncing')",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Database::new(temp_dir).unwrap();
+        let conn = db.pool.get().unwrap();
+        for table in ["subsonic_servers", "webdav_servers"] {
+            let status: String = conn
+                .query_row(&format!("SELECT sync_status FROM {table}"), [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(status, "idle", "{table}");
+        }
     }
 
     #[test]
@@ -3554,5 +3712,69 @@ mod tests {
         assert_eq!(loved_3, 0);
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_migration_57_artist_events_cache_round_trip() {
+        let temp_dir_guard = tempfile::Builder::new()
+            .prefix("luminous_migration57_test_")
+            .tempdir()
+            .unwrap();
+        let temp_dir = temp_dir_guard.path().to_path_buf();
+        let db = Database::new(temp_dir.clone()).unwrap();
+        assert_eq!(db.schema_version, CURRENT_SCHEMA_VERSION);
+
+        let conn = db.pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO artist_events_cache (artist_mbid, events_json, fetched_at) VALUES (?1, ?2, ?3)",
+            params!["mbid-123", r#"[{"id":"evt-1","name":"Summer Fest","cancelled":false,"ticket_urls":[],"event_urls":[]}]"#, 1_700_000_000_i64],
+        )
+        .unwrap();
+
+        let (events_json, fetched_at): (String, i64) = conn
+            .query_row(
+                "SELECT events_json, fetched_at FROM artist_events_cache WHERE artist_mbid = 'mbid-123'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(events_json.contains("Summer Fest"));
+        assert_eq!(fetched_at, 1_700_000_000);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn migration_59_strips_credentials_from_webdav_song_urls_only() {
+        let temp_dir_guard = tempfile::Builder::new()
+            .prefix("luminous_migration59_test_")
+            .tempdir()
+            .unwrap();
+        let db = Database::new(temp_dir_guard.path().to_path_buf()).unwrap();
+        let conn = db.pool.get().unwrap();
+        let webdav = crate::models::SongSource::WEBDAV_ID;
+        let embedded = "http://u:p@nas/dav/a.mp3";
+        for (path, source) in [(embedded, webdav), ("http://u:p@radio/stream", 0)] {
+            conn.execute(
+                "INSERT INTO songs (path, url, stream_url, source) VALUES (?1, ?1, ?1, ?2)",
+                params![path, source],
+            )
+            .unwrap();
+        }
+
+        migrate_strip_webdav_song_credentials(&conn).unwrap();
+
+        let row = |path: &str| -> Option<(String, String)> {
+            conn.query_row(
+                "SELECT url, stream_url FROM songs WHERE path = ?1",
+                params![path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
+        };
+        let plain = "http://nas/dav/a.mp3".to_string();
+        assert_eq!(row(&plain), Some((plain.clone(), plain)));
+        assert!(row(embedded).is_none());
+        assert!(row("http://u:p@radio/stream").is_some());
     }
 }

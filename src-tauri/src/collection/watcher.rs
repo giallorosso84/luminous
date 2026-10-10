@@ -490,10 +490,26 @@ pub fn start_watcher(app: AppHandle, state: &crate::AppState) {
                     log::warn!("Recovering from a watcher error with a full library rescan");
                     let scanner = super::CollectionScanner::new(Arc::clone(&db_for_thread));
                     let app_handle_scan = app_clone.clone();
-                    tauri::async_runtime::block_on(async move {
-                        let _ = scanner.scan_all(app_handle_scan.clone(), false, true).await;
+                    let report = tauri::async_runtime::block_on(async move {
+                        let report = scanner
+                            .scan_all(
+                                app_handle_scan.clone(),
+                                false,
+                                true,
+                                super::ScanTrigger::WatcherOverflow,
+                            )
+                            .await;
                         let _ = app_handle_scan.emit("library-changed", ());
+                        report
                     });
+                    auto_organize_scan_report(
+                        &app_clone,
+                        &db_for_thread,
+                        &watcher_paused,
+                        &self_writes,
+                        cover_manager.as_ref(),
+                        report.ok(),
+                    );
                     continue;
                 }
 
@@ -657,6 +673,7 @@ pub fn start_watcher(app: AppHandle, state: &crate::AppState) {
                         );
                     }
 
+                    let mut newly_added_song_ids = Vec::new();
                     for path in &still_added {
                         log::info!(
                             "Watcher detected file addition/change: {}",
@@ -667,6 +684,14 @@ pub fn start_watcher(app: AppHandle, state: &crate::AppState) {
                             None => super::read_tags(path).and_then(|song| super::upsert_song(&conn, &song)),
                         };
                         if result.is_ok() {
+                            let path_str = path.to_string_lossy().to_string();
+                            if let Ok(id) = conn.query_row(
+                                "SELECT id FROM songs WHERE path = ?1",
+                                rusqlite::params![path_str],
+                                |row| row.get::<_, i64>(0),
+                            ) {
+                                newly_added_song_ids.push(id);
+                            }
                             let _ = app_clone.emit("library-changed", ());
                         }
                         processed_count += 1;
@@ -692,6 +717,16 @@ pub fn start_watcher(app: AppHandle, state: &crate::AppState) {
                             },
                         );
                     }
+
+                    // Continuous auto-organization hook for newly detected files (#1468)
+                    run_auto_organize(
+                        &app_clone,
+                        &db_for_thread,
+                        &watcher_paused,
+                        &self_writes,
+                        cover_manager.as_ref(),
+                        &newly_added_song_ids,
+                    );
                 }
 
                 // `scan_all` already walks every watched directory in one pass, so a
@@ -713,14 +748,101 @@ pub fn start_watcher(app: AppHandle, state: &crate::AppState) {
                     );
                     let scanner = super::CollectionScanner::new(Arc::clone(&db_for_thread));
                     let app_handle_scan = app_clone.clone();
-                    tauri::async_runtime::block_on(async move {
-                        let _ = scanner.scan_all(app_handle_scan.clone(), false, true).await;
+                    let report = tauri::async_runtime::block_on(async move {
+                        let report = scanner
+                            .scan_all(
+                                app_handle_scan.clone(),
+                                false,
+                                true,
+                                super::ScanTrigger::WatcherDirectoryChange,
+                            )
+                            .await;
                         let _ = app_handle_scan.emit("library-changed", ());
+                        report
                     });
+                    // The catch-up scan indexes files the per-file events missed
+                    // (common while a large folder is still copying onto a network
+                    // drive), so it must auto-organize them too — otherwise an
+                    // album ends up split between the old and organized folders.
+                    auto_organize_scan_report(
+                        &app_clone,
+                        &db_for_thread,
+                        &watcher_paused,
+                        &self_writes,
+                        cover_manager.as_ref(),
+                        report.ok(),
+                    );
                 }
             }
         })
         .expect("failed to spawn watcher thread");
+}
+
+/// Auto-organizes `song_ids` (a no-op when the setting is off) and tells the
+/// frontend what happened.
+fn run_auto_organize(
+    app: &tauri::AppHandle,
+    db: &Arc<Database>,
+    watcher_paused: &Arc<AtomicU32>,
+    self_writes: &Arc<super::SelfWriteTracker>,
+    cover_manager: Option<&CoverManager>,
+    song_ids: &[i64],
+) {
+    if song_ids.is_empty() {
+        return;
+    }
+    if let Ok(auto_res) = crate::organizer::auto_organize_song_ids(
+        db,
+        watcher_paused,
+        self_writes,
+        cover_manager,
+        song_ids,
+    ) {
+        if auto_res.moved_count > 0 || auto_res.duplicates_count > 0 || !auto_res.errors.is_empty()
+        {
+            let _ = app.emit("auto-organize-result", &auto_res);
+        }
+        if auto_res.moved_count > 0 {
+            let _ = app.emit("library-changed", ());
+        }
+    }
+}
+
+/// Auto-organizes the songs a watcher-triggered catch-up scan just indexed.
+fn auto_organize_scan_report(
+    app: &tauri::AppHandle,
+    db: &Arc<Database>,
+    watcher_paused: &Arc<AtomicU32>,
+    self_writes: &Arc<super::SelfWriteTracker>,
+    cover_manager: Option<&CoverManager>,
+    report: Option<super::ScanReport>,
+) {
+    let Some(report) = report else { return };
+    let ids = song_ids_for_paths(db, &report.upserted_paths);
+    run_auto_organize(app, db, watcher_paused, self_writes, cover_manager, &ids);
+}
+
+/// Resolves song ids for exact `songs.path` values, in chunks to stay under
+/// SQLite's bound-parameter limit.
+pub(crate) fn song_ids_for_paths(db: &Database, paths: &[String]) -> Vec<i64> {
+    let Ok(conn) = db.pool.get() else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    for chunk in paths.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let sql = format!("SELECT id FROM songs WHERE path IN ({placeholders})");
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            continue;
+        };
+        let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+            r.get::<_, i64>(0)
+        });
+        if let Ok(rows) = rows {
+            ids.extend(rows.flatten());
+        }
+    }
+    ids
 }
 
 #[cfg(test)]

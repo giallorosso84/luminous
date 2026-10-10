@@ -78,10 +78,10 @@
     action();
   }
 
-  const bandLabels = [
-    "31.5 Hz", "63 Hz", "125 Hz", "250 Hz", "500 Hz",
-    "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz"
-  ];
+  const bandLabels = $derived([
+    ...[31.5, 63, 125, 250, 500].map((f) => `${formatNumber(f)} ${i18n.t("units.hz")}`),
+    ...[1, 2, 4, 8, 16].map((f) => `${formatNumber(f)} ${i18n.t("units.khz")}`)
+  ]);
 
   function presetLabel(presetName: string): string {
     const keyMap: Record<string, string> = {
@@ -611,21 +611,22 @@
     </div>
     <div class="flex items-center gap-4 flex-wrap">
 
-      <div class="relative flex items-center bg-brand-main border border-brand-border rounded-[2rem] p-0.5" role="group" aria-label={i18n.t('equalizer.modeLabel')}>
+      <!-- Equal grid columns, not flex-1: unequal label widths would drift the 50%-wide pill off its button. -->
+      <div class="relative grid grid-cols-2 items-center bg-brand-main border border-brand-border rounded-[2rem] p-0.5" role="group" aria-label={i18n.t('equalizer.modeLabel')}>
         <!-- Sliding background pill -->
         <span
           class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-brand-accent shadow-sm pointer-events-none transition-transform duration-200 ease-out {mode === 'parametric' ? 'translate-x-full' : 'translate-x-0'}"
           aria-hidden="true"
         ></span>
         <button
-          class="relative z-10 flex-1 whitespace-nowrap text-xs font-semibold px-4 py-1.5 rounded-full transition-colors duration-200 {mode === 'graphic10' ? 'text-brand-accent-contrast' : 'text-brand-text-secondary hover:text-brand-text-primary'}"
+          class="relative z-10 whitespace-nowrap text-xs font-semibold px-4 py-1.5 rounded-full transition-colors duration-200 {mode === 'graphic10' ? 'text-brand-accent-contrast' : 'text-brand-text-secondary hover:text-brand-text-primary'}"
           onclick={() => handleModeChange("graphic10")}
           aria-pressed={mode === "graphic10"}
         >
           {i18n.t('equalizer.modeGraphic')}
         </button>
         <button
-          class="relative z-10 flex-1 whitespace-nowrap text-xs font-semibold px-4 py-1.5 rounded-full transition-colors duration-200 {mode === 'parametric' ? 'text-brand-accent-contrast' : 'text-brand-text-secondary hover:text-brand-text-primary'}"
+          class="relative z-10 whitespace-nowrap text-xs font-semibold px-4 py-1.5 rounded-full transition-colors duration-200 {mode === 'parametric' ? 'text-brand-accent-contrast' : 'text-brand-text-secondary hover:text-brand-text-primary'}"
           onclick={() => handleModeChange("parametric")}
           aria-pressed={mode === "parametric"}
         >
@@ -690,7 +691,7 @@
           </div>
         {/if}
         <span class="text-xs font-mono font-medium w-16 text-right {preamp > 0 ? 'text-green-400' : preamp < 0 ? 'text-red-400' : 'text-brand-text-primary'}">
-          {preamp > 0 ? "+" : ""}{formatNumber(preamp, { minimumFractionDigits: 1, maximumFractionDigits: 2 })} dB
+          {preamp > 0 ? "+" : ""}{formatNumber(preamp, { minimumFractionDigits: 1, maximumFractionDigits: 2 })} {i18n.t("units.db")}
         </span>
       </div>
 
@@ -855,14 +856,14 @@
 
     <!-- Slider bounds are the backend's clamp range (#1249), so wait for them. -->
     {#if ranges && mode === "graphic10"}
-      <div class="grid grid-cols-5 md:grid-cols-10 gap-3 md:gap-5 min-h-64 h-auto md:h-72 items-center bg-brand-main/50 border border-brand-border/50 rounded-xl p-4 md:p-6">
+      <div class="grid grid-cols-5 @3xl:grid-cols-10 gap-3 @3xl:gap-5 min-h-64 h-auto @3xl:h-72 items-center bg-brand-main/50 border border-brand-border/50 rounded-xl p-4 @3xl:p-6">
         {#each gains as gain, idx}
           <div class="flex flex-col items-center justify-between h-full group">
             <span class="text-[10px] font-bold w-full text-center transition-colors {gain > 0 ? 'text-green-400/80' : gain < 0 ? 'text-red-400/80' : 'text-brand-text-secondary/70'}">
               {gain > 0 ? "+" : ""}{formatNumber(gain, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
             </span>
 
-            <div class="h-40 md:h-48 flex items-center justify-center relative">
+            <div class="h-40 @3xl:h-48 flex items-center justify-center relative">
               <input
                 type="range"
                 min={ranges.eq.gain_db.min}
@@ -876,7 +877,7 @@
               />
             </div>
 
-            <span class="text-[10px] md:text-[11px] font-medium text-brand-text-secondary text-center truncate w-full">
+            <span class="text-[10px] @3xl:text-[11px] font-medium text-brand-text-secondary text-center truncate w-full">
               {bandLabels[idx]}
             </span>
           </div>
@@ -931,7 +932,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+      <div class="grid grid-cols-1 @3xl:grid-cols-3 gap-12">
         <div class="flex flex-col items-center justify-center gap-1.5 h-full">
           {#if ranges}
             <Knob
@@ -942,7 +943,7 @@
               oninput={handleTargetLufsChange}
               disabled={!loudnessStore.enabled}
               label={i18n.t('loudness.targetLevel')}
-              suffix="LUFS"
+              suffix={i18n.t("units.lufs")}
               size={80}
             />
           {/if}
@@ -985,7 +986,7 @@
               oninput={handleFallbackGainChange}
               disabled={!loudnessStore.enabled}
               label={i18n.t('loudness.fallbackGain')}
-              suffix="dB"
+              suffix={i18n.t("units.db")}
               size={80}
             />
           {/if}
@@ -997,9 +998,9 @@
         {#if loudnessStore.analysisRemaining === 0}
           {i18n.t('loudness.analyzed')}
         {:else if loudnessStore.enabled}
-          {i18n.t('loudness.analyzing', { remaining: loudnessStore.analysisRemaining })}
+          {i18n.plural('loudness.analyzing', loudnessStore.analysisRemaining)}
         {:else}
-          {i18n.t('loudness.analysisPaused', { remaining: loudnessStore.analysisRemaining })}
+          {i18n.plural('loudness.analysisPaused', loudnessStore.analysisRemaining)}
         {/if}
       </p>
     </div>
@@ -1089,7 +1090,7 @@
               {/each}
             </div>
           </div>
-          <div class="flex items-center justify-between gap-2 pt-4 md:w-1/2 text-xs text-brand-text-secondary">
+          <div class="flex items-center justify-between gap-2 pt-4 @3xl:w-1/2 text-xs text-brand-text-secondary">
             <span>{i18n.t('fades.suppressSameAlbum')}</span>
             <Toggle
               checked={crossfadeSuppressSameAlbum}

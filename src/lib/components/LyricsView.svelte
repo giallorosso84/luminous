@@ -15,6 +15,7 @@
   import HelpTip from "./HelpTip.svelte";
   import { i18n, formatNumber } from "../stores/i18n.svelte";
   import { toastStore } from "../stores/toast.svelte";
+  import { prefs } from "../stores/prefs.svelte";
   import { rememberScroll } from "../utils/scrollMemory";
   import { parseLrc } from "../utils/lrc";
 
@@ -108,6 +109,9 @@
           playerStore.currentSong.is_instrumental = true;
         }
         errorMsg = "";
+      } else if (errStrLower.startsWith("offline:")) {
+        // Online lookup is switched off (#1398); only saved lyrics are available.
+        errorMsg = i18n.t('lyrics.offlineNoLyrics');
       } else if (errStrLower.includes("no lyrics found on any online provider")) {
         // Known backend error (src-tauri/src/lyrics.rs) — surface the translated
         // message instead of the raw Rust error string.
@@ -208,6 +212,8 @@
 
   $effect(() => {
     const id = playerStore.currentSong?.id;
+    // Re-resolve when Online/Offline flips so a missing lyric can now be searched (#1398).
+    const _online = prefs.onlineEnabled;
     console.log("[LyricsView] Song changed. Reloading lyrics for song ID:", id);
     loadLyrics(id);
     loadOffset(id);
@@ -250,10 +256,10 @@
     <div class="flex items-center gap-3 min-w-0 flex-1">
       <Lyrics class="w-6 h-6 text-brand-accent-text shrink-0" />
       <div class="min-w-0">
-        <h2 class="text-sm font-bold truncate max-w-xs md:max-w-md text-brand-text-primary py-0.5 leading-snug">
+        <h2 class="text-sm font-bold truncate max-w-xs @3xl:max-w-md text-brand-text-primary py-0.5 leading-snug">
           {playerStore.currentSongDisplayTitle}
         </h2>
-        <p class="text-[10px] text-brand-text-secondary/70 truncate max-w-xs md:max-w-md">
+        <p class="text-[10px] text-brand-text-secondary/70 truncate max-w-xs @3xl:max-w-md">
           {playerStore.currentSong ? `${playerStore.currentSong.artist || i18n.t('collection.unknownArtist')} — ${playerStore.currentSong.album || i18n.t('collection.unknownAlbum')}` : i18n.t('lyrics.lyricsHelpText')}
         </p>
       </div>
@@ -294,9 +300,11 @@
               <HelpTip text={i18n.t('lyrics.offsetHelp')} label={i18n.t('lyrics.syncOffsetLabel', {}, 'Sync Offset')} describes="lyrics-offset-value" />
             </div>
           {/if}
-          <Button onclick={() => loadLyrics(playerStore.currentSong?.id, true)} variant="secondary" size="sm" title={i18n.t('lyrics.refetchTooltip', {}, "Refetch lyrics online")}>
-            <RefreshCw class="w-3.5 h-3.5" /> {i18n.t('lyrics.refetchBtn', {}, "Refetch")}
-          </Button>
+          {#if prefs.onlineEnabled}
+            <Button onclick={() => loadLyrics(playerStore.currentSong?.id, true)} variant="secondary" size="sm" title={i18n.t('lyrics.refetchTooltip', {}, "Refetch lyrics online")}>
+              <RefreshCw class="w-3.5 h-3.5" /> {i18n.t('lyrics.refetchBtn', {}, "Refetch")}
+            </Button>
+          {/if}
           <Button onclick={startEditing} variant="primary" size="sm">
             <Edit3 class="w-3.5 h-3.5" /> {i18n.t('settings.editThemeShort')}
           </Button>
@@ -344,7 +352,7 @@
     {:else if lyricsText}
       <div class="max-w-3xl mx-auto text-center">
         {#if isSynced}
-          <div class="flex flex-col gap-6 md:gap-8 pb-32">
+          <div class="flex flex-col gap-6 @3xl:gap-8 pb-32">
             {#each parsedLines as line, idx}
               {@const isActive = idx === activeLineIndex}
               <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -353,7 +361,7 @@
                 data-index={idx}
                 dir="auto"
                 onclick={() => playerStore.seek(line.timeMs * 1_000_000)}
-                class="text-xl md:text-2xl font-bold transition-all duration-300 transform text-balance {isActive ? 'text-brand-text-primary scale-105 filter drop-shadow-[0_0_8px_var(--color-brand-accent)] font-extrabold' : 'text-brand-text-secondary/30 hover:text-brand-text-secondary/60'}"
+                class="text-xl @3xl:text-2xl font-bold transition-all duration-300 transform text-balance {isActive ? 'text-brand-text-primary scale-105 filter drop-shadow-[0_0_8px_var(--color-brand-accent)] font-extrabold' : 'text-brand-text-secondary/30 hover:text-brand-text-secondary/60'}"
               >
                 {#if isActive && line.words && line.words.length > 0}
                   {#each line.words as word}
@@ -385,9 +393,11 @@
         <p class="text-sm font-semibold text-rose-400">{i18n.t('lyrics.lyricsNotFound')}</p>
         <p class="text-xs text-brand-text-secondary/50 max-w-sm">{errorMsg}</p>
         <div class="flex items-center gap-2 mt-2">
-          <Button onclick={() => loadLyrics(playerStore.currentSong?.id)} variant="secondary" size="sm">
-            {i18n.t('lyrics.retrySearch', {}, "Retry Search")}
-          </Button>
+          {#if prefs.onlineEnabled}
+            <Button onclick={() => loadLyrics(playerStore.currentSong?.id)} variant="secondary" size="sm">
+              {i18n.t('lyrics.retrySearch', {}, "Retry Search")}
+            </Button>
+          {/if}
           {#if playerStore.currentSong}
             <Button onclick={() => toggleInstrumental(true)} variant="accent-soft" size="sm">
               {i18n.t('lyrics.markInstrumental', {}, "Mark as Instrumental")}

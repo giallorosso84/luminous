@@ -29,6 +29,8 @@
   import BlurredCover from "./BlurredCover.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import ContextMenuItem from "./ContextMenuItem.svelte";
+  import ContextMenuDivider from "./ContextMenuDivider.svelte";
+  import CommunityRating from "./CommunityRating.svelte";
   import {
     PlusIcon as Plus,
     PencilSimpleIcon as Edit3,
@@ -48,9 +50,10 @@
   import AlbumProfileEditor from "./AlbumProfileEditor.svelte";
   import MarkdownBio from "./MarkdownBio.svelte";
   import SocialIcon from "./SocialIcon.svelte";
-  import type { Song, AlbumItem, PlayContext } from "../types";
+  import type { Song, AlbumItem, PlayContext, SongContextEnrichment } from "../types";
   import { getCoverArtUrl, resolveArtUrl } from "../types";
-  import { i18n } from "../stores/i18n.svelte";
+  import { i18n, formatNumber } from "../stores/i18n.svelte";
+  import { formatHoursMinutes } from "../utils/formatters";
   import { statsExclusionsStore } from "../stores/statsExclusions.svelte";
   import { picardStore } from "../stores/picard.svelte";
   import { prefs } from "../stores/prefs.svelte";
@@ -58,6 +61,7 @@
   import { compareSongs } from "../utils/songSort";
   import { rememberScroll } from "../utils/scrollMemory";
   import { openInPicard } from "../utils/picard";
+  import { openExternalUrl } from "../utils/openExternalUrl";
   import {
     resolveSocialUrl,
     formatDisplayLabel,
@@ -109,14 +113,49 @@
     }
   }
 
-  let hasReleaseGroupMbid = $derived(
-    songs.some((s) => (s.musicbrainz_release_group_id ?? "").trim().length > 0)
+  let releaseGroupMbid = $derived(
+    songs.map((s) => (s.musicbrainz_release_group_id ?? "").trim()).find((id) => id.length > 0) ?? ""
   );
+  let hasReleaseGroupMbid = $derived(releaseGroupMbid.length > 0);
+
+  /** CritiqueBrainz or MusicBrainz community rating for the album's release group (cached backend-side). */
+  let communityRating = $state<{
+    rating: number;
+    count: number | null;
+    source: "critiquebrainz" | "musicbrainz";
+  } | null>(null);
+  $effect(() => {
+    const songId = songs.find((s) => (s.musicbrainz_release_group_id ?? "").trim() === releaseGroupMbid)?.id;
+    const mbid = releaseGroupMbid;
+    communityRating = null;
+    if (!mbid || songId == null || !prefs.onlineEnabled) return;
+    let stale = false;
+    invoke<SongContextEnrichment>("get_song_context", { songId, forceRefresh: false, locale: i18n.currentLocale })
+      .then((ctx) => {
+        if (stale) return;
+        if (ctx.critiquebrainz_rating != null) {
+          communityRating = {
+            rating: ctx.critiquebrainz_rating,
+            count: ctx.critiquebrainz_review_count || null,
+            source: "critiquebrainz",
+          };
+        } else if (ctx.mb_rating != null) {
+          communityRating = {
+            rating: ctx.mb_rating,
+            count: ctx.mb_rating_votes || null,
+            source: "musicbrainz",
+          };
+        }
+      })
+      .catch(() => {});
+    return () => { stale = true; };
+  });
 
   /** fanart.tv cover and disc art (#1277). New disc art re-scans the cover
    * stack so it's counted. Failures only warn: art is a bonus on top of
    * the details. */
   async function retrieveAlbumArt(onlyMissing: boolean) {
+    if (!prefs.onlineEnabled) return;
     try {
       const result = await collectionStore.retrieveAlbumArt(albumName, { onlyMissing });
       if (result.disc_uri) artworkRefreshToken++;
@@ -130,7 +169,7 @@
   // the user didn't ask for it, so a network error isn't worth a toast;
   // `details_fetched` stays unset and the next visit retries.
   async function handleRetrieveAlbumDetails(auto = false) {
-    if (retrievingDetails || !hasReleaseGroupMbid) return;
+    if (retrievingDetails || !hasReleaseGroupMbid || !prefs.onlineEnabled) return;
     retrievingDetails = true;
     const taskId = `album-enrichment-${albumName.toLowerCase()}`;
     tasksStore.startTask({
@@ -141,10 +180,8 @@
     });
     try {
       const result = await collectionStore.retrieveAlbumDetails(albumName);
-      const label = result.added_count === 1
-        ? i18n.t("albumDetail.retrieveDetailsSuccessOne", {}, "Added 1 link from MusicBrainz")
-        : result.added_count > 1
-          ? i18n.t("albumDetail.retrieveDetailsSuccessMany", { count: result.added_count }, `Added ${result.added_count} links from MusicBrainz`)
+      const label = result.added_count > 1
+          ? i18n.plural("albumDetail.retrieveDetailsSuccess", result.added_count)
           : i18n.t("albumDetail.retrieveDetailsNoResults", {}, "No additional details found on MusicBrainz");
       await retrieveAlbumArt(auto);
       tasksStore.completeTask(taskId, label);
@@ -258,10 +295,7 @@
 
   let totalDurationLabel = $derived.by(() => {
     const totalNs = songs.reduce((sum, s) => sum + (s.length_nanosec ?? 0), 0);
-    const totalMinutes = Math.round(totalNs / 1_000_000_000 / 60);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    return formatHoursMinutes(Math.round(totalNs / 1_000_000_000 / 60));
   });
 
   let isEditorOpen = $state(false);
@@ -292,7 +326,7 @@
   let lastAutoFetchedAlbum = $state<string | null>(null);
   $effect(() => {
     const currentAlbum = albumName;
-    if (!currentAlbum || songs.length === 0) return;
+    if (!currentAlbum || songs.length === 0 || !prefs.onlineEnabled) return;
     if (lastAutoFetchedAlbum === currentAlbum) return;
 
     const profile = albumProfile;
@@ -377,14 +411,12 @@
     });
   });
 
-  async function handleOpenUrl(url: string) {
-    if (!url) return;
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
-    } catch {
-      window.open(url, "_blank");
-    }
+  function handleOpenUrl(url: string) {
+    if (url) openExternalUrl(url);
+  }
+
+  function openCritiqueBrainz() {
+    if (releaseGroupMbid) handleOpenUrl(`https://critiquebrainz.org/release-group/${releaseGroupMbid}`);
   }
 
   /** Which album `songs` currently holds — lags `albumName` until its fetch lands. */
@@ -651,7 +683,7 @@
     <div class="flex items-start justify-between gap-6 relative z-10">
       <div class="flex flex-col justify-end min-w-0 max-w-xl">
         {#if !windowLayoutStore.isDetailHeaderCollapsed}
-        <h1 class="text-3xl sm:text-4xl font-heading font-bold text-brand-text-primary leading-snug truncate py-0.5" title={albumName}>
+        <h1 class="text-3xl @xl:text-4xl font-heading font-bold text-brand-text-primary leading-snug truncate py-0.5" title={albumName}>
           {albumName}
         </h1>
 
@@ -673,7 +705,7 @@
             <span>{yearLabel}</span>
             <span>•</span>
           {/if}
-          <span>{songs.length === 1 ? i18n.t('playlists.oneSong') : i18n.t('playlists.songsCount', { count: songs.length })}</span>
+          <span>{i18n.plural("playlists.songsCount", songs.length)}</span>
           <span>•</span>
           <span>{totalDurationLabel}</span>
           {#if albumItem}
@@ -729,7 +761,7 @@
       </div>
 
       {#if !windowLayoutStore.isDetailHeaderCollapsed}
-      <div class="relative w-40 h-40 hidden sm:block shrink-0">
+      <div class="relative w-40 h-40 hidden @xl:block shrink-0">
         <div class="absolute inset-0 overflow-hidden border border-brand-border/60 shadow-2xl">
           <CoverStack
             covers={[{
@@ -767,6 +799,11 @@
             <span>{genreLabel}</span>
           </div>
         {/if}
+        {#if !hasProfileContent && communityRating}
+          <div class="inline-flex items-center px-3 py-1 text-xs font-medium text-brand-text-secondary shrink-0 ml-auto">
+            <CommunityRating rating={communityRating.rating} count={communityRating.count} {releaseGroupMbid} source={communityRating.source} />
+          </div>
+        {/if}
         {#if hasProfileContent && !windowLayoutStore.isOverviewExpanded}
           <button
             type="button"
@@ -774,7 +811,7 @@
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-brand-border bg-brand-sidebar text-brand-text-secondary text-xs font-medium hover:text-brand-text-primary hover:border-brand-accent/40 transition-colors cursor-pointer shrink-0 ml-auto"
           >
             <ArrowDownLeft class="w-3.5 h-3.5" />
-            <span>{i18n.t('albumDetail.albumInfo', {}, 'Album Info')}</span>
+            {@render albumInfoTitle()}
           </button>
         {/if}
       </div>
@@ -787,11 +824,11 @@
         ontoggle={(e) => windowLayoutStore.setOverviewExpanded(e.currentTarget.open)}
         class="group/overview border border-brand-border rounded-xl bg-brand-sidebar/95 backdrop-blur-xl overflow-hidden shadow-md transition-all @container"
       >
-        <summary class="flex items-center justify-between px-4 py-2.5 sm:px-5 sm:py-3 text-xs font-semibold text-brand-text-secondary cursor-pointer select-none hover:text-brand-text-primary transition-colors">
-          <span>{i18n.t('albumDetail.albumInfo', {}, 'Album Info')}</span>
+        <summary class="flex items-center justify-between px-4 py-2.5 @xl:px-5 @xl:py-3 text-xs font-semibold text-brand-text-secondary cursor-pointer select-none hover:text-brand-text-primary transition-colors">
+          {@render albumInfoTitle()}
           <ArrowUpRight class="w-3.5 h-3.5 text-brand-text-secondary/70" />
         </summary>
-        <div class="p-4 sm:p-5 md:p-6 border-t border-brand-border/60 flex flex-col @2xl:flex-row gap-5 md:gap-6 justify-between">
+        <div class="p-4 @xl:p-5 @3xl:p-6 border-t border-brand-border/60 flex flex-col @2xl:flex-row gap-5 @3xl:gap-6 justify-between">
           <!-- Liner Notes / Description (Left) -->
           {#if hasDescription}
             <div class="flex-1 flex flex-col gap-3 min-w-0">
@@ -818,9 +855,9 @@
                     type="button"
                     onclick={() => handleOpenUrl(item.url)}
                     title={item.url}
-                    class="flex items-center gap-2.5 sm:gap-3 group/link text-left transition-colors cursor-pointer min-w-0"
+                    class="flex items-center gap-2.5 @xl:gap-3 group/link text-left transition-colors cursor-pointer min-w-0"
                   >
-                    <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-main/60 {item.isOfficial ? 'border-[3px]' : 'border'} border-brand-border flex items-center justify-center text-brand-text-secondary group-hover/link:text-brand-accent group-hover/link:border-brand-accent/40 transition-colors shrink-0 shadow-2xs">
+                    <div class="w-7 h-7 @xl:w-8 @xl:h-8 rounded-full bg-brand-main/60 {item.isOfficial ? 'border-[3px]' : 'border'} border-brand-border flex items-center justify-center text-brand-text-secondary group-hover/link:text-brand-accent group-hover/link:border-brand-accent/40 transition-colors shrink-0 shadow-2xs">
                       <SocialIcon platform={item.platform} size={14} />
                     </div>
                     <div class="flex items-center gap-1 min-w-0 flex-1">
@@ -901,6 +938,14 @@
   />
 {/if}
 
+{#snippet albumInfoTitle()}
+  {#if communityRating}
+    <CommunityRating rating={communityRating.rating} count={communityRating.count} {releaseGroupMbid} source={communityRating.source} />
+  {:else}
+    <span>{i18n.t('albumDetail.albumInfo', {}, 'Album Info')}</span>
+  {/if}
+{/snippet}
+
 {#if overflowMenuPos}
   <ContextMenu
     x={overflowMenuPos.x}
@@ -920,6 +965,7 @@
       onclick={() => { handleRefreshAlbum(); overflowMenuPos = null; }}
       disabled={loading || collectionStore.isScanning || refreshing}
     />
+    {#if prefs.onlineEnabled}
     <ContextMenuItem
       icon={RetrieveDetails}
       label={i18n.t("albumDetail.retrieveAlbumDetails", {}, "Retrieve Album Details")}
@@ -927,6 +973,15 @@
       onclick={() => { handleRetrieveAlbumDetails(); overflowMenuPos = null; }}
       disabled={loading || retrievingDetails || !hasReleaseGroupMbid}
     />
+    <ContextMenuDivider />
+    <ContextMenuItem
+      icon={ExternalLink}
+      label={i18n.t("albumDetail.reviewOnCritiqueBrainz", {}, "Review on CritiqueBrainz")}
+      title={hasReleaseGroupMbid ? i18n.t("albumDetail.reviewOnCritiqueBrainzTooltip", {}, "Open this album on CritiqueBrainz to read or write reviews") : i18n.t("albumDetail.retrieveAlbumDetailsNoMbidTooltip", {}, "No MusicBrainz release group ID found for this album")}
+      onclick={() => { openCritiqueBrainz(); overflowMenuPos = null; }}
+      disabled={loading || !hasReleaseGroupMbid}
+    />
+    {/if}
     <ContextMenuItem
       icon={OpenInPicard}
       label={i18n.t("picard.openInPicard")}
@@ -938,6 +993,7 @@
           ? i18n.t("picard.remoteNotSupportedTooltip")
           : undefined}
     />
+    <ContextMenuDivider />
     <ContextMenuItem
       icon={BarChart2}
       label={statsExclusionsStore.isExcluded("album", albumName)

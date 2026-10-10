@@ -9,6 +9,7 @@
 //   collection — Library scanner + file watcher
 //   playlist  — Playlist CRUD + undo/redo
 
+pub mod addons;
 pub mod analyzer;
 pub mod artist_image;
 pub mod audio;
@@ -39,6 +40,7 @@ pub mod lyrics;
 pub mod media_session;
 pub mod models;
 pub mod musicbrainz;
+pub mod native_labels;
 pub mod organizer;
 pub mod paths;
 pub mod picard;
@@ -46,6 +48,7 @@ pub mod pins;
 pub mod player;
 pub mod playlist;
 pub mod playlist_parsers;
+pub mod ratings_sync;
 pub mod remote_scheduler;
 pub mod restart_manager;
 pub mod scrobbler;
@@ -107,6 +110,8 @@ pub struct AppState {
     pub remote_auto_sync: Arc<remote_scheduler::AutoSyncScheduler>,
     /// Portable Genres/Artist Tags hierarchy in the default library (#1312).
     pub hierarchy_sidecar: Arc<hierarchy_sidecar::HierarchySidecar>,
+    /// Store entitlement and delivery for add-on themes (#1414).
+    pub addons: Arc<addons::entitlement::AddonManager>,
 }
 
 /// Suppresses stock webview browser chrome — reload/find/print keybindings and
@@ -886,22 +891,36 @@ pub fn run() {
                 });
             },
         )
+        // Decrypted add-on overlay assets, served from memory only (#1413).
+        .register_asynchronous_uri_scheme_protocol(
+            "luminous-addon",
+            move |_ctx, request, responder| {
+                let uri = request.uri().to_string();
+                tauri::async_runtime::spawn_blocking(move || {
+                    responder.respond(crate::addons::serve_request(&uri));
+                });
+            },
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::all()
-                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
-                )
-                .build(),
-        )
+        .plugin({
+            let window_state = tauri_plugin_window_state::Builder::default().with_state_flags(
+                tauri_plugin_window_state::StateFlags::all()
+                    & !tauri_plugin_window_state::StateFlags::VISIBLE,
+            );
+            match crate::paths::isolated_window_state_file() {
+                Some(file) => window_state.with_filename(file),
+                None => window_state,
+            }
+            .build()
+        })
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         // `MacosLauncher::LaunchAgent` is required by the plugin's cross-platform
         // API but inert on the platforms Luminous actually ships (Windows/Linux) —
         // it only takes effect on a macOS build, which this project doesn't target.
@@ -974,6 +993,16 @@ pub fn run() {
                 audio::register_subsonic_resolver(move |path| {
                     let conn = db.pool.get().map_err(|e| e.to_string())?;
                     subsonic::resolve_stream_url(&conn, path).map_err(|e| e.to_string())
+                });
+            }
+
+            // WebDAV song URLs are stored credential-free; the Basic auth
+            // header comes from the saved server at open time (#1492).
+            {
+                let db = db.clone();
+                audio::register_webdav_auth_resolver(move |url| {
+                    let conn = db.pool.get().ok()?;
+                    webdav::resolve_auth_header(&conn, url)
                 });
             }
 
@@ -1129,6 +1158,7 @@ pub fn run() {
                 musicbrainz,
                 remote_auto_sync: Arc::new(remote_scheduler::AutoSyncScheduler::new()),
                 hierarchy_sidecar: Arc::new(hierarchy_sidecar::HierarchySidecar::new()),
+                addons: commands::addons::build_manager(app.handle()),
             };
 
             crate::collection::start_watcher(app.handle().clone(), &state);
@@ -1380,6 +1410,7 @@ pub fn run() {
             commands::pins::reorder_pinned_items,
             // Social share card export (#97)
             commands::share::save_share_card_image,
+            commands::share::copy_share_card_image,
             // Playlist commands
             commands::playlist::validate_playlist_name,
             commands::playlist::create_playlist,
@@ -1444,7 +1475,9 @@ pub fn run() {
             commands::lyrics::set_lyrics_offset,
             // Details pane context enrichment (#23)
             commands::context::get_song_context,
+            commands::context::get_artist_events,
             commands::context::is_context_enrichment_enabled,
+            commands::context::set_online_enabled,
             // Tag Editor commands
             commands::tageditor::get_song_details,
             commands::tageditor::save_song_tags,
@@ -1483,6 +1516,8 @@ pub fn run() {
             commands::tags::get_default_library,
             commands::tags::set_default_library,
             // Theme commands (#165)
+            commands::addons::refresh_addons,
+            commands::addons::acquire_addon,
             commands::theme::import_theme,
             commands::theme::export_theme,
             // Settings commands
@@ -1496,6 +1531,7 @@ pub fn run() {
             commands::settings::get_db_schema_status,
             commands::settings::get_fade_settings,
             commands::settings::set_fade_settings,
+            commands::settings::set_native_labels,
             commands::settings::get_minimize_to_tray_enabled,
             commands::settings::set_minimize_to_tray_enabled,
             commands::settings::get_autostart_enabled,
@@ -1511,7 +1547,7 @@ pub fn run() {
             commands::scrobbler::get_scrobble_cache_status,
             commands::scrobbler::flush_scrobble_cache,
             commands::scrobbler::toggle_scrobble_pause,
-            commands::scrobbler::sync_favourites_to_listenbrainz,
+            commands::scrobbler::sync_ratings_to_listenbrainz,
             commands::scrobbler::get_discord_status,
             // MusicBrainz OAuth commands (#1388)
             commands::musicbrainz::start_musicbrainz_login,
@@ -1533,6 +1569,8 @@ pub fn run() {
             // Organizer commands
             commands::organizer::preview_organize,
             commands::organizer::apply_organize,
+            commands::organizer::get_organize_config,
+            commands::organizer::set_organize_config,
             // WebDAV commands (#682)
             commands::subsonic::list_subsonic_servers,
             commands::subsonic::save_subsonic_server,

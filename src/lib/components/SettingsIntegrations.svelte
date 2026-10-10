@@ -21,7 +21,8 @@
     CircleNotchIcon as LoaderCircle,
     ArrowUpRightIcon as ArrowUpRight,
     HeartIcon as Heart,
-    BookOpenIcon as Globe,
+    WifiHighIcon as WifiHigh,
+    WifiSlashIcon as WifiSlash,
     DiscordLogoIcon as DiscordLogo
   } from "phosphor-svelte";
 
@@ -33,7 +34,6 @@
   let fanartValidationError = $state<string | null>(null);
   let picardCustomPath = $state("");
   let isRecheckingPicard = $state(false);
-  let contextEnrichmentEnabled = $state(true);
 
   async function handleValidateFanartKey() {
     const key = fanartKeyInput.trim();
@@ -44,15 +44,10 @@
       await invoke("validate_fanart_api_key", { apiKey: key });
       prefs.setFanartApiKey(key);
     } catch (err) {
-      fanartValidationError = typeof err === "string" ? err : "Failed to validate API key";
+      fanartValidationError = typeof err === "string" ? err : i18n.t("settings.fanartValidateFailed");
     } finally {
       isValidatingFanartKey = false;
     }
-  }
-
-  async function handleContextEnrichmentToggle(v: boolean) {
-    contextEnrichmentEnabled = v;
-    await invoke("set_app_setting", { key: "context_enrichment_enabled", value: v ? "true" : "false" });
   }
 
   async function handlePicardCustomPathChange() {
@@ -64,7 +59,7 @@
     const selected = await open({
       multiple: false,
       title: i18n.t("picard.browseBtn"),
-      filters: isWindows ? [{ name: "Picard executable", extensions: ["exe"] }] : undefined,
+      filters: isWindows ? [{ name: i18n.t("settings.picardExecutableFilter"), extensions: ["exe"] }] : undefined,
     });
     if (selected && typeof selected === "string") {
       picardCustomPath = selected;
@@ -86,7 +81,6 @@
     try {
       const settings = await invoke<Record<string, string>>("get_all_app_settings");
       picardCustomPath = settings?.picard_path ?? "";
-      contextEnrichmentEnabled = settings?.context_enrichment_enabled !== "false";
     } catch (e) {
       console.error("Failed to load Picard custom path on mount:", e);
     }
@@ -99,33 +93,33 @@
   });
 </script>
 
-<!-- Online Data Sources (Context & Bio Enrichment) Integration Card -->
-<div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
-  <div class="pb-3 flex justify-between items-center">
-    <div class="flex items-center gap-3">
+<!-- Online / Offline master toggle (#1398) -->
+<div class="bg-brand-sidebar border border-brand-border rounded-xl p-6">
+  <div class="flex justify-between items-start gap-4">
+    <div class="flex items-center gap-3 min-w-0">
       <div class="p-2 rounded-xl bg-brand-accent/15 text-brand-accent-text shrink-0">
-        <Globe class="w-5 h-5" />
+        {#if prefs.onlineEnabled}
+          <WifiHigh class="w-5 h-5" />
+        {:else}
+          <WifiSlash class="w-5 h-5" />
+        {/if}
       </div>
       <div class="space-y-1 min-w-0">
         <h3 class="font-bold text-sm text-brand-text-primary">{i18n.t('settings.contextEnrichmentIntegrationTitle')}</h3>
         <p class="text-xs text-brand-text-secondary leading-relaxed">{i18n.t('settings.contextEnrichmentDesc')}</p>
       </div>
     </div>
-  </div>
-
-  <div class="flex items-center justify-between gap-4 py-1">
-    <div class="flex flex-col gap-0.5 min-w-0">
-      <span class="text-sm font-medium text-brand-text-primary">{i18n.t('settings.contextEnrichmentLabel')}</span>
-      <p class="text-xs text-brand-text-secondary">{i18n.t('settings.contextEnrichmentHint')}</p>
-    </div>
     <Toggle
-      checked={contextEnrichmentEnabled}
-      onchange={(v) => handleContextEnrichmentToggle(v)}
-      label={i18n.t('settings.contextEnrichmentLabel')}
+      checked={prefs.onlineEnabled}
+      onchange={(v) => prefs.setOnlineEnabled(v)}
+      label={i18n.t('settings.contextEnrichmentIntegrationTitle')}
+      onText={i18n.t('settings.onlineLabel')}
+      offText={i18n.t('settings.offlineLabel')}
     />
   </div>
 </div>
 
+{#if prefs.onlineEnabled}
 <!-- ListenBrainz Scrobbler Integration Card -->
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-5">
   <div class="pb-3 flex justify-between items-start gap-4">
@@ -180,7 +174,7 @@
           type="button"
           onclick={() => showListenBrainzToken = !showListenBrainzToken}
           class="absolute right-3 top-1/2 -translate-y-1/2 text-brand-text-secondary hover:text-brand-text-primary transition-colors"
-          title={showListenBrainzToken ? "Hide token" : "Show token"}
+          title={showListenBrainzToken ? i18n.t("settings.hideToken") : i18n.t("settings.showToken")}
         >
           {#if showListenBrainzToken}
             <EyeOff class="w-4 h-4" />
@@ -234,7 +228,7 @@
             <span class="text-xs font-semibold text-brand-text-primary">
               {scrobblerStore.pendingCount === 0
                 ? i18n.t('listenbrainz.cacheEmpty')
-                : i18n.t('listenbrainz.cachePending', { count: scrobblerStore.pendingCount })}
+                : i18n.plural("listenbrainz.cachePending", scrobblerStore.pendingCount)}
             </span>
             {#if scrobblerStore.flushSuccessMessage}
               <span class="text-xs text-brand-text-primary font-medium">({scrobblerStore.flushSuccessMessage})</span>
@@ -276,43 +270,65 @@
         </div>
 
         {#if scrobblerStore.ratingsEnabled}
-          <div class="ml-2 pl-3 border-l-2 border-brand-accent/30 flex flex-wrap items-center justify-between gap-3 py-1">
-            <div class="flex flex-col gap-0.5 min-w-0">
-              <span class="text-xs font-semibold text-brand-text-primary">{i18n.t('listenbrainz.syncFavouritesLabel')}</span>
-              <p class="text-[11px] text-brand-text-secondary">{i18n.t('listenbrainz.syncFavouritesHint')}</p>
-              {#if scrobblerStore.syncFavouritesResult}
-                <p class="text-[11px] text-brand-text-primary font-medium">
-                  {i18n.t('listenbrainz.syncFavouritesSuccess', {
-                    synced: scrobblerStore.syncFavouritesResult.synced,
-                    total: scrobblerStore.syncFavouritesResult.total_favourites,
-                    skipped: scrobblerStore.syncFavouritesResult.skipped_no_mbid
-                  })}
-                </p>
-              {:else if scrobblerStore.syncFavouritesError}
-                <p class="text-[11px] text-brand-text-primary font-medium">{scrobblerStore.syncFavouritesError}</p>
-              {/if}
+          <div class="ml-2 pl-3 border-l-2 border-brand-accent/30 flex flex-col gap-3 py-1">
+            <div class="flex flex-col gap-1">
+              <label for="critiquebrainz-user-input" class="text-xs font-semibold text-brand-text-primary">{i18n.t('listenbrainz.critiquebrainzUserLabel')}</label>
+              <p class="text-[11px] text-brand-text-secondary">{i18n.t('listenbrainz.critiquebrainzUserHint')}</p>
+              <Input
+                id="critiquebrainz-user-input"
+                value={scrobblerStore.critiquebrainzUserId}
+                oninput={(e) => scrobblerStore.setCritiquebrainzUserId((e.target as HTMLInputElement).value)}
+                placeholder={i18n.t('listenbrainz.critiquebrainzUserPlaceholder')}
+                class="w-full max-w-md"
+              />
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onclick={() => scrobblerStore.syncFavourites()}
-              disabled={scrobblerStore.isSyncingFavourites}
-              class="gap-1.5 shrink-0"
-            >
-              {#if scrobblerStore.isSyncingFavourites}
-                <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
-                <span>{i18n.t('listenbrainz.syncingFavouritesBtn')}</span>
-              {:else}
-                <Heart weight="fill" class="w-3.5 h-3.5 text-rose-400" />
-                <span>{i18n.t('listenbrainz.syncFavouritesBtn')}</span>
-              {/if}
-            </Button>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex flex-col gap-0.5 min-w-0">
+                <span class="text-xs font-semibold text-brand-text-primary">{i18n.t('listenbrainz.syncRatingsLabel')}</span>
+                <p class="text-[11px] text-brand-text-secondary">{i18n.t('listenbrainz.syncRatingsHint')}</p>
+                {#if scrobblerStore.syncRatingsResult}
+                  {@const r = scrobblerStore.syncRatingsResult}
+                  <p class="text-[11px] text-brand-text-primary font-medium">
+                    {i18n.t('listenbrainz.syncRatingsSuccess', {
+                      loved: r.pulled_loved,
+                      hated: r.pulled_hated,
+                      songRatings: r.pulled_song_ratings,
+                      albumRatings: r.pulled_album_ratings,
+                      pushed: r.pushed
+                    })}
+                    {#if r.failed > 0}{i18n.t('listenbrainz.syncRatingsFailed', { failed: r.failed })}{/if}
+                  </p>
+                  {#if !r.critiquebrainz_checked}
+                    <p class="text-[11px] text-brand-text-secondary">{i18n.t('listenbrainz.syncRatingsNoCritiquebrainz')}</p>
+                  {/if}
+                {:else if scrobblerStore.syncRatingsError}
+                  <p class="text-[11px] text-brand-text-primary font-medium">{scrobblerStore.syncRatingsError}</p>
+                {/if}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={() => scrobblerStore.syncRatings()}
+                disabled={scrobblerStore.isSyncingRatings}
+                class="gap-1.5 shrink-0"
+              >
+                {#if scrobblerStore.isSyncingRatings}
+                  <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+                  <span>{i18n.t('listenbrainz.syncingRatingsBtn')}</span>
+                {:else}
+                  <Heart weight="fill" class="w-3.5 h-3.5 text-rose-400" />
+                  <span>{i18n.t('listenbrainz.syncRatingsBtn')}</span>
+                {/if}
+              </Button>
+            </div>
           </div>
         {/if}
       </div>
     {/if}
   {/if}
 </div>
+
+{/if}
 
 <!-- MusicBrainz Picard Card -->
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
@@ -384,6 +400,7 @@
   </div>
 </div>
 
+{#if prefs.onlineEnabled}
 <!-- Discord Rich Presence Card -->
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
   <div class="pb-3 flex justify-between items-center border-b border-brand-border/60">
@@ -529,7 +546,7 @@
           type="button"
           onclick={() => showFanartKey = !showFanartKey}
           class="absolute right-3 top-1/2 -translate-y-1/2 text-brand-text-secondary hover:text-brand-text-primary transition-colors"
-          title={showFanartKey ? "Hide key" : "Show key"}
+          title={showFanartKey ? i18n.t("settings.hideKey") : i18n.t("settings.showKey")}
         >
           {#if showFanartKey}
             <EyeOff class="w-4 h-4" />
@@ -586,3 +603,4 @@
     {/each}
   </div>
 </div>
+{/if}

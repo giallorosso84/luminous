@@ -83,9 +83,7 @@ export function formatRelativeYears(years: number): string {
   if (years <= 0) {
     return i18n.t("artistInfo.lessThanOneYearAgo", {}, "<1 year ago");
   }
-  return years === 1
-    ? i18n.t("playlists.relativeOneYearAgo", {}, "1 year ago")
-    : i18n.t("playlists.relativeYearsAgo", { count: years }, `${years} years ago`);
+  return i18n.plural("playlists.relativeYearsAgo", years);
 }
 
 /**
@@ -119,26 +117,6 @@ export function isArtistPerson(artistType?: string | null, gender?: string | nul
  */
 export function isArtistGroup(artistType?: string | null): boolean {
   return artistType?.trim().toLowerCase() === "group";
-}
-
-/**
- * Localizes common MusicBrainz gender strings.
- */
-export function resolveGenderLabel(gender?: string | null): string {
-  if (!gender || !gender.trim()) return "";
-  const normalized = gender.trim().toLowerCase();
-  switch (normalized) {
-    case "female":
-      return i18n.t("artistInfo.genderFemale", {}, "Female");
-    case "male":
-      return i18n.t("artistInfo.genderMale", {}, "Male");
-    case "non-binary":
-      return i18n.t("artistInfo.genderNonBinary", {}, "Non-binary");
-    case "other":
-      return i18n.t("artistInfo.genderOther", {}, "Other");
-    default:
-      return gender.charAt(0).toUpperCase() + gender.slice(1);
-  }
 }
 
 export interface AreaLinkItem {

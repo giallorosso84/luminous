@@ -79,10 +79,10 @@ into Picard's territory; it's a different, complementary axis Picard was never m
 
 ## User Guide
 
-- The in-app Help view loads the user manual from `docs/user-guide/`: `luminous-user-guide-{EN,FR}.html` plus shared `guide.css` / `guide.js`. It is plain HTML/CSS/JS maintained in this repo — edit it directly.
-- Update EN and FR together in the same change, like locale strings.
+- The in-app Help view loads the user manual from `docs/user-guide/`: one `luminous-user-guide-{EN,FR,DE,ES,IT,RU,UK}.html` per UI language plus shared `guide.css` / `guide.js`. It is plain HTML/CSS/JS maintained in this repo — edit it directly.
+- Update every guide together in the same change, like locale strings.
 - It must work offline: no CDN scripts, web fonts or other remote requests. Colours come from the app's theme variables (`guide.js` mirrors them from the parent window), so don't hard-code a palette.
-- `bun run sync-docs` copies it into `static/` (generated, gitignored).
+- `bun run sync-docs` copies it into `static/` (generated, gitignored), along with the app's fonts from `src/lib/fonts/` into `static/fonts/` — the guide keeps no font files of its own. Preview from `static/`; opened straight from `docs/user-guide/` it falls back to the system font.
 
 ## Package Manager
 
@@ -134,9 +134,17 @@ pkexec apt-get install -y libasound2-dev libssl-dev pkg-config libayatana-appind
 ## Design Principles
 
 - **State Preservation**: Luminous must always save and restore the state the user left/closed the application in. When reopened, the user should be returned exactly to where they were (e.g., same sidebar view/tab, same song selection, same player track/position/volume, same equalizer presets/enabled state).
-- See [DESIGN.md](../DESIGN.md)
 
 ## UI/UX Design Conventions
+
+- **Responsive breakpoints: viewport for the shell, container for what lives inside it.** Window-size
+  tiers are declared once as `--breakpoint-*` in `src/app.css` and mirrored by `BREAKPOINT_*_PX` in
+  `src/lib/constants.ts` (`breakpoints.test.ts` fails if they drift): `xs` 420, `sm` 640 (compact to medium),
+  `md` 768 (right panel), `lg` 1024 (sidebar). Height tiers are `HEIGHT_BREAKPOINT_*_PX` (JS-only, 160/600).
+  Use them for app-shell decisions only. Anything that depends on the space a component actually gets (it
+  moves with the sidebar and right panel) uses a container query with Tailwind's named sizes (`@sm`, `@3xl`),
+  never a viewport prefix or an arbitrary `min-[Npx]` / `@min-[Npx]` value. Structural show/hide goes through
+  `windowLayoutStore`; pure styling goes through CSS. Never both for one decision.
 
 - **Toast persistence**: Toasts must never auto-dismiss unless an explicit `durationMs` is passed by the
   caller. By default, toasts stay visible until the user clicks the `X` button.
@@ -216,6 +224,9 @@ pkexec apt-get install -y libasound2-dev libssl-dev pkg-config libayatana-appind
   runtime fallback for safety — never a substitute for translating. Completeness (no missing keys, no
   stale keys), placeholder token matching, and non-identical French translations (unless explicitly
   allowlisted in `IDENTICAL_OK`) are enforced in CI by `src/lib/locales/locales.test.ts`.
+
+- **Translation guidelines**: adding a locale, per-language terminology authorities, register and
+  placeholder/`{count}` conventions live in [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md).
 
 - **French is Canadian French**: for `src/lib/locales/fr.ts` and the French user guide, check terms in
   the OQLF's Grand dictionnaire terminologique (vitrinelinguistique.oqlf.gouv.qc.ca) first, then
@@ -309,8 +320,8 @@ punt either to the user.
 - Proactively search and view GitHub issues using the `gh` command tool (e.g., `gh issue list` and `gh issue view <id>`) when asked to "fix a bug" or "work on a feature".
 - When working on a bug or feature, always work in a dedicated git worktree. Note that Claude uses its own worktree flow in `.claude/worktrees/`, while all other AI assistants and agents must place their dedicated worktree in the `.worktrees/` directory (e.g., `.worktrees/<feature-or-bug-name>`). Do not delete the worktree until the changes have been reviewed, merged, and approved for cleanup by the user.
 - As soon as you start working a tracked issue, set its Status to "In Progress" on the Project board (see [docs/ISSUE_PRIORITY.md](docs/ISSUE_PRIORITY.md) for the `gh project item-edit` command) — don't leave it sitting at "Todo" while work is underway.
-- Present the Walkthrough (`walkthrough.md`) to the user and wait for their explicit feedback and approval before opening or finalizing a PR. Running `bun run tauri dev` directly is fine, but check first that another instance isn't already running (`ps aux | grep LuminousMusicPlayer`) — this repo uses `tauri-plugin-single-instance`, and launching a second one while the user has their own session up can tear down their running instance instead of just being rejected.
-- **Merge once every check has actually finished, not before.** This replaced an earlier blanket "never merge" rule after PRs were repeatedly merged while checks were still running — the CI gate is what matters, not withholding the merge action itself. After creating a PR, watch it with `gh pr checks <pr> --watch` (this blocks until every check concludes, pass or fail) rather than sampling `mergeable`/the GitHub UI banner, which both go green on required-checks-only and can be reported alongside still-`in_progress` non-required checks. Once everything has genuinely concluded and passed, run `gh pr merge <pr>` and tell the user it merged. If any check fails, stop and report it — do not merge, and do not retry the merge command hoping it clears. For a stack of dependent PRs, merge them in order (base before dependent) so each retargets cleanly as its predecessor's branch is deleted.
+- Present the Walkthrough (`walkthrough.md`) to the user and wait for their explicit feedback and approval before opening or finalizing a PR.
+- **Merge once every check has actually finished, not before.** The CI gate is what matters: PRs have been merged while non-required checks were still running. After creating a PR, watch it with `gh pr checks <pr> --watch` (this blocks until every check concludes, pass or fail) rather than sampling `mergeable`/the GitHub UI banner, which both go green on required-checks-only and can be reported alongside still-`in_progress` non-required checks. Once everything has genuinely concluded and passed, run `gh pr merge <pr>` and tell the user it merged. If any check fails, stop and report it — do not merge, and do not retry the merge command hoping it clears. For a stack of dependent PRs, merge them in order (base before dependent) so each retargets cleanly as its predecessor's branch is deleted.
 - Once a PR has merged, confirm the corresponding issues closed and their Status set to "Done" on the Project board. On Windows, `git worktree remove` fails with "Permission denied" on the worktree the current session is running from (open file handles keep it locked) — hand the `git worktree remove`/`git branch -d` commands to the user to run themselves in that case instead of retrying.
 - **Creating Issues & Pull Requests**:
   1. Inspect the relevant templates under `.github/ISSUE_TEMPLATE/` (e.g., `bug_report.md`, `feature_request.md`, `epic.md`) when creating issues.
@@ -319,8 +330,7 @@ punt either to the user.
   4. Write the issue or PR body to a temporary scratch file in the workspace or the artifacts scratch directory.
   5. Pick the milestone: never file a new issue against a Closed milestone. Unless the user
      specifies one, default to the open milestone with the highest version number (`gh api
-     repos/esoltys/luminous/milestones -q '.[] | select(.state=="open") | .title'` — at the time
-     of writing that's `3.0`) rather than asking which milestone to use each time. **Never attach a
+     repos/esoltys/luminous/milestones -q '.[] | select(.state=="open") | .title'`) rather than asking which milestone to use each time. **Never attach a
      milestone to a Pull Request** — milestones track issues only, and tagging or assigning a
      milestone to a PR can trigger release workflows.
   6. Create the issue using the GitHub CLI:

@@ -32,7 +32,7 @@
   import { i18n } from "../stores/i18n.svelte";
   import { portal } from "../utils/portal";
   import SocialIcon from "./SocialIcon.svelte";
-  import { ALBUM_LINK_PLATFORMS, getPlatformInfo } from "../utils/artistSocials";
+  import { ALBUM_LINK_PLATFORMS, getPlatformInfo, localizePlatform } from "../utils/artistSocials";
   import { getAlbumFolderPath } from "../utils/pathUtils";
   import type { AlbumProfile, AlbumLink } from "../types";
 
@@ -197,7 +197,7 @@
       await collectionStore.refreshStats();
       await collectionStore.refreshLibrary();
 
-      toastStore.show(i18n.t("albumTagEditor.clearArtSuccess", { count }), "success");
+      toastStore.show(i18n.plural("albumTagEditor.clearArtSuccess", count), "success");
     } catch (e: any) {
       console.error("Failed to clear album artwork:", e);
       toastStore.show(i18n.t("albumTagEditor.clearArtFailedPrefix") + e.toString(), "error");
@@ -318,7 +318,7 @@
         <button
           onclick={onClose}
           class="p-1.5 text-brand-text-secondary hover:text-brand-text-primary hover:bg-brand-accent/10 rounded-md transition-colors shrink-0 cursor-pointer"
-          aria-label="Close dialog"
+          aria-label={i18n.t("common.closeDialog")}
         >
           <X class="w-4 h-4" />
         </button>
@@ -464,19 +464,19 @@
             <!-- Sort Overrides ("Sort As") -->
             <details class="col-span-2 group border border-brand-border rounded-lg bg-brand-sidebar/40 overflow-hidden">
               <summary class="flex items-center justify-between px-3 py-2 text-xs font-semibold text-brand-text-secondary cursor-pointer select-none hover:text-brand-text-primary transition-colors">
-                <span>Sort Overrides ("Sort As")</span>
+                <span>{i18n.t("sortOverrides.heading")}</span>
                 <span class="text-[10px] text-brand-text-secondary/70 group-open:rotate-180 transition-transform">▼</span>
               </summary>
               <div class="p-3 pt-2 grid grid-cols-2 gap-3 border-t border-brand-border/60">
-                <FormField label="Album Sort As" for="album-tag-albumsort">
+                <FormField label={i18n.t("sortOverrides.album")} for="album-tag-albumsort">
                   <Input id="album-tag-albumsort" bind:value={albumsort} disabled={isSaving} size="sm" class="w-full" />
                 </FormField>
 
-                <FormField label="Album Artist Sort As" for="album-tag-albumartistsort">
+                <FormField label={i18n.t("sortOverrides.albumArtist")} for="album-tag-albumartistsort">
                   <Input id="album-tag-albumartistsort" bind:value={albumArtistSort} disabled={isSaving} size="sm" class="w-full" />
                 </FormField>
 
-                <FormField label="Genre Sort As" for="album-tag-genresort" span2>
+                <FormField label={i18n.t("sortOverrides.genre")} for="album-tag-genresort" span2>
                   <Input id="album-tag-genresort" bind:value={genresort} disabled={isSaving} size="sm" class="w-full" />
                 </FormField>
               </div>
@@ -558,7 +558,7 @@
                     >
                       {#each ALBUM_LINK_PLATFORMS as p (p.id)}
                         <option value={p.id}>
-                          {p.id === "website" ? i18n.t("albumProfileEditor.website", {}, "Official Page") : p.id === "custom" ? i18n.t("albumProfileEditor.customLink", {}, "Custom Link") : p.label}
+                          {p.id === "website" ? i18n.t("albumProfileEditor.website", {}, "Official Page") : p.id === "custom" ? i18n.t("albumProfileEditor.customLink", {}, "Custom Link") : localizePlatform(p).label}
                         </option>
                       {/each}
                     </select>
@@ -596,7 +596,7 @@
         {#if songIds.length > 0}
           <div class="flex items-center gap-2 text-xs font-medium text-brand-text-secondary">
             <Layers class="w-3.5 h-3.5 text-brand-accent shrink-0" />
-            <span>{i18n.t('albumTagEditor.tracksAffected', { count: songIds.length })}</span>
+            <span>{i18n.plural("albumTagEditor.tracksAffected", songIds.length)}</span>
           </div>
         {:else}
           <span></span>

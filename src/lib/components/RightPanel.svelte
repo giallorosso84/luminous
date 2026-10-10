@@ -10,9 +10,11 @@
     CaretDownIcon as CaretDown
   } from "phosphor-svelte";
   import { i18n, formatNumber } from "../stores/i18n.svelte";
+  import { prefs } from "../stores/prefs.svelte";
   import { lyricsStatus } from "../utils/lyrics";
   import { openExternalUrl } from "../utils/openExternalUrl";
   import GenreChips from "./GenreChips.svelte";
+  import CommunityRating from "./CommunityRating.svelte";
   import AudioPipelineStages from "./AudioPipelineStages.svelte";
   import ArtistInformationPanel from "./ArtistInformationPanel.svelte";
   import type { SongContextEnrichment } from "../types";
@@ -56,7 +58,7 @@
 
   async function loadContext(songId: number | undefined, forceRefresh = false) {
     const requestId = ++contextRequestId;
-    if (!songId) {
+    if (!songId || !prefs.onlineEnabled) {
       contextData = null;
       contextErrorMsg = "";
       return;
@@ -64,7 +66,7 @@
     isLoadingContext = true;
     contextErrorMsg = "";
     try {
-      const data = await invoke<SongContextEnrichment>("get_song_context", { songId, forceRefresh });
+      const data = await invoke<SongContextEnrichment>("get_song_context", { songId, forceRefresh, locale: i18n.currentLocale });
       if (requestId !== contextRequestId) return;
       contextData = data;
     } catch (e) {
@@ -80,8 +82,7 @@
   });
 
   let hasArtistInfo = $derived(
-    !!contextData?.artist_gender ||
-      !!contextData?.artist_begin_date ||
+    !!contextData?.artist_begin_date ||
       !!contextData?.artist_end_date ||
       !!contextData?.artist_begin_area_name ||
       !!contextData?.artist_area_name
@@ -93,7 +94,6 @@
     return !!(
       contextData.wikipedia_extract ||
       contextData.critiquebrainz_rating != null ||
-      (contextData.critiquebrainz_review_links?.length ?? 0) > 0 ||
       hasArtistInfo
     );
   });
@@ -268,7 +268,9 @@
       </div>
 
       {#if activeTab === "context"}
-        {#if isLoadingContext}
+        {#if !prefs.onlineEnabled}
+          <p class="text-xs text-brand-text-secondary/60 py-2">{i18n.t('playerBar.contextOffline')}</p>
+        {:else if isLoadingContext}
           <div class="flex items-center gap-2 text-xs text-brand-text-secondary/60 py-2">
             <RefreshCw class="w-3.5 h-3.5 animate-spin" />
             <span>{i18n.t('playerBar.contextLoading', {}, 'Fetching context…')}</span>
@@ -358,7 +360,7 @@
             </div>
           {/if}
 
-          {#if contextData?.critiquebrainz_rating != null || (contextData?.critiquebrainz_review_links?.length ?? 0) > 0}
+          {#if contextData?.critiquebrainz_rating != null}
             <div class="space-y-1.5 text-xs">
               {#if currentSong.musicbrainz_release_group_id}
                 <button
@@ -373,20 +375,14 @@
                 <img src="/critiquebrainz-logo.svg" alt={i18n.t('playerBar.critiquebrainzSectionLabel', {}, 'CritiqueBrainz')} class="h-5 w-auto opacity-80" />
               {/if}
               {#if contextData?.critiquebrainz_rating != null}
-                <div class="flex items-start justify-between gap-3">
-                  <span class="text-brand-text-secondary/60 shrink-0">{i18n.t('playerBar.critiquebrainzRatingLabel', {}, 'Community Rating')}</span>
-                  <span class="text-brand-text-primary text-right">{formatNumber(contextData.critiquebrainz_rating, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / 5</span>
+                <div class="text-brand-text-secondary">
+                  <CommunityRating
+                    rating={contextData.critiquebrainz_rating}
+                    count={contextData.critiquebrainz_review_count}
+                    releaseGroupMbid={currentSong.musicbrainz_release_group_id}
+                  />
                 </div>
               {/if}
-              {#each contextData?.critiquebrainz_review_links ?? [] as link, i (link)}
-                <button
-                  type="button"
-                  onclick={() => openExternalUrl(link)}
-                  class="group relative text-brand-accent hover:underline transition-colors cursor-pointer block"
-                >
-                  {i18n.t('playerBar.critiquebrainzReviewsLabel', {}, 'Review')} {i + 1}
-                </button>
-              {/each}
             </div>
           {/if}
 
@@ -437,7 +433,7 @@
                   <span class="text-brand-text-primary text-right">
                     {formatNumber(contextData.mb_rating, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5
                     {#if contextData.mb_rating_votes}
-                      <span class="text-brand-text-secondary/60">{i18n.t('playerBar.mbRatingVotes', { count: contextData.mb_rating_votes }, `(${contextData.mb_rating_votes} votes)`)}</span>
+                      <span class="text-brand-text-secondary/60">{i18n.plural("playerBar.mbRatingVotes", contextData.mb_rating_votes)}</span>
                     {/if}
                   </span>
                 </div>

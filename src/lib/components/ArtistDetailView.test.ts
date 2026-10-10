@@ -458,12 +458,111 @@ describe("ArtistDetailView", () => {
       expect(windowLayoutStore.isOverviewExpanded).toBe(false);
       expect(screen.queryByRole("button", { name: /Artist Info/ })).toBeTruthy();
     });
+
+    it("limits ArtistInformationPanel max-width to two columns of links and uses 4-column links when artist has no bio", async () => {
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "get_songs_by_artist") return Promise.resolve([{ id: 1, title: "El Bueno Y El Malo", artist: "Hermanos Gutiérrez" }] as any);
+        if (cmd === "get_playlists_by_artist") return Promise.resolve([]);
+        if (cmd === "get_compilations_by_artist") return Promise.resolve([]);
+        if (cmd === "get_artist_profile") {
+          return Promise.resolve({
+            artist_key: "Hermanos Gutiérrez",
+            website: "https://hermanosgutierrez.ch",
+            tags: [],
+            social_links: [
+              { platform: "bandcamp", handle_or_url: "https://hermanosgutierrez.bandcamp.com" },
+              { platform: "discogs", handle_or_url: "https://discogs.com/artist/123" },
+            ],
+            bio: null,
+          });
+        }
+        if (cmd === "get_song_context") {
+          return Promise.resolve({
+            artist_begin_date: "2015",
+            artist_begin_area_name: "Zürich",
+            artist_area_name: "Switzerland",
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const { container } = render(ArtistDetailView, { props: { artistName: "Hermanos Gutiérrez" } });
+      await waitFor(() => {
+        expect(screen.getByText("Formed")).toBeTruthy();
+      });
+
+      expect(screen.getByText("Artist Info")).toBeTruthy();
+      expect(screen.getByText(/2015/)).toBeTruthy();
+
+      // Facts panel container must have max-width constraint for two columns of links
+      const factsContainer = container.querySelector(".space-y-2.text-xs");
+      expect(factsContainer).toBeTruthy();
+      expect(factsContainer?.className).toContain("@xl:max-w-[calc(50%-0.3125rem)]");
+
+      // Links grid must expand to up to 4 columns when there is no bio
+      const linksGrid = container.querySelector(".grid.grid-cols-1");
+      expect(linksGrid).toBeTruthy();
+      expect(linksGrid?.className).toContain("@xl:grid-cols-4");
+    });
+
+    it("limits ArtistInformationPanel max-width and renders 2-column links beside bio when bio is present", async () => {
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "get_songs_by_artist") return Promise.resolve([{ id: 1, title: "Song 1", artist: "Shania Twain" }] as any);
+        if (cmd === "get_playlists_by_artist") return Promise.resolve([]);
+        if (cmd === "get_compilations_by_artist") return Promise.resolve([]);
+        if (cmd === "get_artist_profile") {
+          return Promise.resolve({
+            artist_key: "Shania Twain",
+            website: "https://www.shaniatwain.com",
+            tags: ["country"],
+            social_links: [{ platform: "instagram", handle_or_url: "@shaniatwain" }],
+            bio: longBio,
+          });
+        }
+        if (cmd === "get_song_context") {
+          return Promise.resolve({
+            artist_begin_date: "1965-08-28",
+            artist_type: "Person",
+            artist_gender: "female",
+            artist_begin_area_name: "Windsor",
+            artist_area_name: "Canada",
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const { container } = render(ArtistDetailView, { props: { artistName: "Shania Twain" } });
+      await waitFor(() => {
+        expect(screen.getByText("Born")).toBeTruthy();
+      });
+
+      expect(screen.getByText("Artist Info")).toBeTruthy();
+
+      // Facts panel container in two-column mode also has the max-width constraint
+      const factsContainer = container.querySelector(".space-y-2.text-xs");
+      expect(factsContainer).toBeTruthy();
+      expect(factsContainer?.className).toContain("@xl:max-w-[calc(50%-0.3125rem)]");
+
+      // Links grid beside bio uses 2 columns
+      const linksGrid = container.querySelector(".grid.grid-cols-1");
+      expect(linksGrid).toBeTruthy();
+      expect(linksGrid?.className).toContain("@sm:grid-cols-2");
+      expect(linksGrid?.className).not.toContain("@xl:grid-cols-4");
+
+      // Reset get_songs_by_artist to empty array so subsequent tests don't see mock songs
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "get_songs_by_artist") return Promise.resolve([]);
+        return Promise.resolve();
+      });
+    });
   });
 
     it("hides tags and bio/profile section while keeping action buttons visible when detail header is collapsed", async () => {
       const originalHeight = windowLayoutStore.viewportHeight;
       try {
-        // Set viewportHeight to less than DETAIL_HEADER_COLLAPSE_HEIGHT_PX (600)
+        // Set viewportHeight to less than HEIGHT_BREAKPOINT_SHORT_PX (600)
         windowLayoutStore.viewportHeight = 500;
         expect(windowLayoutStore.isDetailHeaderCollapsed).toBe(true);
 
@@ -646,5 +745,40 @@ describe("ArtistDetailView", () => {
         prefs.fanartFetchLogo = true;
         prefs.fanartFetchBackground = true;
       }
+    });
+
+    it("renders album cards with w-56 width to match Album collection view size", async () => {
+      collectionStore.albums = [
+        {
+          album: "Come On Over",
+          artist: "Shania Twain",
+          year: 1997,
+          track_count: 16,
+          disc_count: 1,
+          art_embedded: false,
+          art_automatic: null,
+          art_manual: null,
+          rating: -1,
+          total_duration_nanosec: 3_600_000_000_000,
+        },
+      ];
+
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "get_songs_by_artist") {
+          return Promise.resolve([
+            { id: 1, title: "Man! I Feel Like a Woman!", album: "Come On Over", artist: "Shania Twain", length_nanosec: 240_000_000_000 } as any,
+          ]);
+        }
+        if (cmd === "get_playlists_by_artist") return Promise.resolve([]);
+        if (cmd === "get_compilations_by_artist") return Promise.resolve([]);
+        if (cmd === "get_artist_profile") return Promise.resolve(collectionStore.artistProfiles["shania twain"]);
+        return Promise.resolve();
+      });
+
+      const { findByText } = render(ArtistDetailView, { props: { artistName: "Shania Twain" } });
+      const albumTitle = await findByText("Come On Over");
+      const card = albumTitle.closest(".w-56.shrink-0");
+      expect(card).toBeTruthy();
     });
 });

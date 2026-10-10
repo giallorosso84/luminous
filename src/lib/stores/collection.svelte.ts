@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { stripEnclosingQuotes } from "../utils/filterParser";
-import { i18n, formatNumber } from "./i18n.svelte";
+import { i18n } from "./i18n.svelte";
 import type {
   AlbumArtRetrievalResult,
   Song,
@@ -10,6 +10,7 @@ import type {
   LibraryStats,
   DbSchemaStatus,
   ScanProgress,
+  ScanReason,
   ScanPhase,
   BatchProgress,
   AlbumItem,
@@ -164,6 +165,7 @@ class CollectionStore {
     total_filesize_bytes: 0,
     album_art_bytes: 0,
     artist_art_bytes: 0,
+    thumbnail_bytes: 0,
   });
   /** False until the first refreshStats() resolves — `stats.total_songs` starts at 0
    *  before that, so code gating on "library is empty" must wait for this to avoid
@@ -395,7 +397,7 @@ class CollectionStore {
             const releaseUrl = isFirstEver
               ? undefined
               : "https://github.com/esoltys/luminous/releases";
-            toastStore.show(msg, "milestone", undefined, releaseUrl);
+            toastStore.celebrate(msg, isFirstEver ? "star" : "sparkle", releaseUrl);
             setTimeout(() => { this.isFirstLaunch = false; }, 700);
           }, 1200);
         }
@@ -444,27 +446,24 @@ class CollectionStore {
             // covers this same filesystem activity, so skip this toast to
             // avoid a second, less-accurate "songs added" notification (#233).
             if (added > 0 && !event.payload.silent) {
-              const text = added === 1
-                ? i18n.t("settings.importFinishedToastOne")
-                : i18n.t("settings.importFinishedToastMany", { count: added });
+              const text = i18n.plural("settings.importFinishedToast", added);
               toastStore.show(text, "success");
             }
 
             // Milestone detection (#182): check if total_songs just crossed a
-            // threshold. Only fire the first one crossed (don't stack multiple
+            // threshold. Only fire the highest one crossed (don't stack multiple
             // milestone toasts if an import jumps past several at once).
             const newTotal = this.stats.total_songs;
-            for (const threshold of MILESTONE_THRESHOLDS) {
-              if (songCountBeforeRefresh < threshold && newTotal >= threshold) {
-                this.milestoneReached = threshold;
-                const thresholdFormatted = formatNumber(threshold);
-                toastStore.show(
-                  i18n.t("celebrations.milestone", { count: thresholdFormatted }, `${thresholdFormatted} songs in your library!`),
-                  "milestone"
-                );
-                setTimeout(() => { this.milestoneReached = null; }, 700);
-                break;
-              }
+            const threshold = MILESTONE_THRESHOLDS.findLast(
+              (t) => songCountBeforeRefresh < t && newTotal >= t
+            );
+            if (threshold !== undefined) {
+              this.milestoneReached = threshold;
+              toastStore.celebrate(
+                i18n.plural("celebrations.milestone", threshold),
+                "flag"
+              );
+              setTimeout(() => { this.milestoneReached = null; }, 700);
             }
           });
           this.refreshLibrary();
@@ -529,15 +528,13 @@ class CollectionStore {
       await listen<BatchProgress>("batch-processing-completed", (event) => {
         const { batch_id, total_count } = event.payload;
         const taskId = `watcher-batch-${batch_id}`;
-        const text = total_count === 1
-          ? i18n.t("settings.batchProcessingDoneToastOne")
-          : i18n.t("settings.batchProcessingDoneToastMany", { count: total_count });
+        const text = i18n.plural("settings.batchProcessingDoneToast", total_count);
         tasksStore.completeTask(taskId, text);
       });
 
       // Track WebDAV synchronization (#682, #1083, #1087)
       await listen<WebDavSyncProgressPayload>("webdav-sync-progress", (event) => {
-        const { server_id, server_name, current_count, added, updated, errors, done } = event.payload;
+        const { server_id, server_name, current_count, added, updated, errors, done, daily_check } = event.payload;
         const taskId = `webdav-sync-${server_id}`;
         if (done) {
           const summary = i18n.t("settings.webdavSyncComplete", {
@@ -548,9 +545,11 @@ class CollectionStore {
           tasksStore.completeTask(taskId, `${server_name}: ${summary}`);
           this.refreshWebDavServers();
         } else {
-          const label = current_count > 0
-            ? i18n.t("tasks.syncingWebdavCount", { name: server_name, count: current_count }, `Syncing ${server_name} (${current_count} items)...`)
-            : i18n.t("tasks.syncingWebdav", { name: server_name }, `Syncing ${server_name}...`);
+          const label = daily_check
+            ? i18n.t("tasks.syncingWebdavDaily", { name: server_name, count: current_count }, `Daily full check of ${server_name} (${current_count} items)...`)
+            : current_count > 0
+              ? i18n.t("tasks.syncingWebdavCount", { name: server_name, count: current_count }, `Syncing ${server_name} (${current_count} items)...`)
+              : i18n.t("tasks.syncingWebdav", { name: server_name }, `Syncing ${server_name}...`);
 
           if (!tasksStore.isTaskActive(taskId)) {
             tasksStore.startTask({
@@ -628,11 +627,7 @@ class CollectionStore {
           if (tasksStore.isTaskActive(taskId)) {
             tasksStore.completeTask(
               taskId,
-              i18n.t(
-                "settings.artworkSweepSuccess",
-                { count: current },
-                `Exported ${current} artwork files to your music folders.`
-              )
+              i18n.plural("settings.artworkSweepSuccess", current)
             );
           }
         } else {
@@ -674,7 +669,7 @@ class CollectionStore {
       });
 
       if (this.scanOnStartup) {
-        this.startScan(false);
+        this.startScan(false, "startup");
       }
     } catch (err) {
       console.error("Failed to initialize CollectionStore:", err);
@@ -1132,7 +1127,7 @@ class CollectionStore {
       setTimeout(() => { this.justAddedFirstFolder = false; }, 400);
     }
 
-    this.startScan(false);
+    this.startScan(false, "folder_added");
   }
 
   async addDirectoryDialog() {
@@ -1165,10 +1160,10 @@ class CollectionStore {
       const result = await invoke<{ songs_relocated: number }>("relocate_directory", { oldPath, newPath });
       await this.refreshDirectories();
       toastStore.show(
-        i18n.t("settings.folderLocateSuccess", { count: formatNumber(result.songs_relocated), path: newPath }),
+        i18n.plural("settings.folderLocateSuccess", result.songs_relocated, { path: newPath }),
         "success",
       );
-      this.startScan(false);
+      this.startScan(false, "folder_relocated");
       return true;
     } catch (err) {
       console.error("Failed to relocate directory:", err);
@@ -1180,12 +1175,13 @@ class CollectionStore {
   async removeDirectory(path: string) {
     await invoke("remove_directory", { path });
     await this.refreshDirectories();
-    this.startScan(false);
+    this.startScan(false, "folder_removed");
   }
 
-  async startScan(force: boolean = false) {
+  /** `reason` only labels the scan in the diagnostics export's timing log. */
+  async startScan(force: boolean = false, reason: ScanReason = "manual") {
     this.isScanning = true;
-    invoke("scan_directories", { force }).catch((err) => {
+    invoke("scan_directories", { force, reason }).catch((err) => {
       console.error("Failed to scan directories:", err);
       this.isScanning = false;
     });

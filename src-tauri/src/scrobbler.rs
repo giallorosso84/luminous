@@ -5,7 +5,7 @@
 //! ensuring listens survive offline sessions and application restarts.
 
 use crate::db::Database;
-use crate::models::{Song, SongSource, LIBRARY_SOURCES_SQL};
+use crate::models::{Song, SongSource};
 use crate::tageditor::format_error_chain;
 use anyhow::Result;
 use reqwest::Client;
@@ -16,6 +16,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 const LISTENBRAINZ_API_BASE: &str = "https://api.listenbrainz.org/1";
+const CRITIQUEBRAINZ_API_BASE: &str = "https://critiquebrainz.org/ws/1";
 const SUBMISSION_CLIENT_NAME: &str = "Luminous";
 
 /// User configuration for scrobbling services.
@@ -24,6 +25,9 @@ pub struct ScrobblerSettings {
     pub listenbrainz_enabled: bool,
     pub listenbrainz_token: String,
     pub listenbrainz_username: Option<String>,
+    /// CritiqueBrainz profile URL or user UUID, pasted by the user: CritiqueBrainz
+    /// can't resolve a username to the UUID its review API filters on (#1386).
+    pub critiquebrainz_user_id: String,
     pub scrobble_now_playing: bool,
     pub scrobble_ratings: bool,
     pub scrobble_paused: bool,
@@ -41,6 +45,7 @@ impl Default for ScrobblerSettings {
             listenbrainz_enabled: false,
             listenbrainz_token: String::new(),
             listenbrainz_username: None,
+            critiquebrainz_user_id: String::new(),
             scrobble_now_playing: true,
             scrobble_ratings: true,
             scrobble_paused: false,
@@ -83,13 +88,52 @@ pub struct ScrobbleCacheStatus {
     pub last_attempt: Option<i64>,
 }
 
-/// Statistics from bulk synchronizing favourite tracks to ListenBrainz.
+/// Outcome of a two-way ratings sync (#1386). `pulled_*` counts are local
+/// changes made from remote data; `pushed` counts loves/hates sent to
+/// ListenBrainz. `critiquebrainz_checked` is false when no CritiqueBrainz
+/// account is configured, so the UI can say stars weren't looked at.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncFavouritesResult {
-    pub total_favourites: u32,
-    pub synced: u32,
-    pub skipped_no_mbid: u32,
+pub struct SyncRatingsResult {
+    pub pulled_loved: u32,
+    pub pulled_hated: u32,
+    pub pulled_song_ratings: u32,
+    pub pulled_album_ratings: u32,
+    pub pushed: u32,
     pub failed: u32,
+    pub critiquebrainz_checked: bool,
+    /// Songs whose love/stars changed locally; the command layer emits
+    /// `song-stats-changed` for each so views and dynamic playlists catch up.
+    #[serde(skip)]
+    pub changed_song_ids: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+struct FeedbackPage {
+    feedback: Vec<FeedbackItem>,
+    total_count: usize,
+}
+
+#[derive(Deserialize)]
+struct FeedbackItem {
+    recording_mbid: Option<String>,
+    score: i32,
+}
+
+#[derive(Deserialize)]
+struct CritiquePage {
+    count: usize,
+    reviews: Vec<CritiqueReview>,
+}
+
+#[derive(Deserialize)]
+struct CritiqueReview {
+    entity_id: String,
+    entity_type: String,
+    rating: Option<u8>,
+    #[serde(default)]
+    is_draft: bool,
+    #[serde(default)]
+    is_hidden: bool,
 }
 
 #[derive(Deserialize)]
@@ -166,6 +210,10 @@ pub struct ScrobblerManager {
     settings: Arc<Mutex<ScrobblerSettings>>,
     paused: Arc<std::sync::atomic::AtomicBool>,
     discord: Arc<Mutex<crate::discord::DiscordManager>>,
+    /// Mirrors the Online/Offline master toggle (#1398). While `false`,
+    /// ListenBrainz traffic and Discord presence are suspended; the persisted
+    /// per-service settings are left untouched so they resume on re-enable.
+    online: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ScrobblerManager {
@@ -181,6 +229,11 @@ impl ScrobblerManager {
             initial_settings.scrobble_paused,
         ));
         let discord = Arc::new(Mutex::new(crate::discord::DiscordManager::new()));
+        let online = db
+            .pool
+            .get()
+            .map(|conn| crate::commands::context::is_online_enabled(&conn))
+            .unwrap_or(true);
 
         Self {
             db,
@@ -188,6 +241,36 @@ impl ScrobblerManager {
             settings: Arc::new(Mutex::new(initial_settings)),
             paused,
             discord,
+            online: Arc::new(std::sync::atomic::AtomicBool::new(online)),
+        }
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.online.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Apply the Online/Offline master toggle: going offline drops the Discord
+    /// connection; going online reconnects it when the user has it enabled.
+    pub async fn set_online(&self, online: bool) {
+        self.online
+            .store(online, std::sync::atomic::Ordering::Relaxed);
+        let settings = self.get_settings().await;
+        let discord = Arc::clone(&self.discord);
+        let client_id = settings.discord_client_id.clone();
+        if online {
+            if settings.discord_enabled && !settings.scrobble_paused {
+                tauri::async_runtime::spawn(async move {
+                    let mut d = discord.lock().await;
+                    let _ = d.connect(&client_id).await;
+                });
+            }
+            self.trigger_flush();
+        } else {
+            tauri::async_runtime::spawn(async move {
+                let mut d = discord.lock().await;
+                let _ = d.clear_activity(&client_id).await;
+                d.disconnect();
+            });
         }
     }
 
@@ -214,6 +297,9 @@ impl ScrobblerManager {
                             "listenbrainz_username" => {
                                 settings.listenbrainz_username =
                                     if v.is_empty() { None } else { Some(v) }
+                            }
+                            "listenbrainz_critiquebrainz_user_id" => {
+                                settings.critiquebrainz_user_id = v
                             }
                             "scrobbler_now_playing" => {
                                 settings.scrobble_now_playing = v != "false" && v != "0"
@@ -270,6 +356,10 @@ impl ScrobblerManager {
                         .unwrap_or_default(),
                 ),
                 (
+                    "listenbrainz_critiquebrainz_user_id",
+                    new_settings.critiquebrainz_user_id.clone(),
+                ),
+                (
                     "scrobbler_now_playing",
                     new_settings.scrobble_now_playing.to_string(),
                 ),
@@ -307,7 +397,7 @@ impl ScrobblerManager {
         let mut s = self.settings.lock().await;
         *s = new_settings.clone();
 
-        if new_settings.discord_enabled && !new_settings.scrobble_paused {
+        if new_settings.discord_enabled && !new_settings.scrobble_paused && self.is_online() {
             let discord = Arc::clone(&self.discord);
             let client_id = new_settings.discord_client_id.clone();
             tauri::async_runtime::spawn(async move {
@@ -346,8 +436,22 @@ impl ScrobblerManager {
         self.settings.lock().await.clone()
     }
 
+    /// Settings as the network/presence paths must see them: ListenBrainz and
+    /// Discord read as disabled while the master toggle is Offline.
+    async fn effective_settings(&self) -> ScrobblerSettings {
+        let mut s = self.get_settings().await;
+        if !self.is_online() {
+            s.listenbrainz_enabled = false;
+            s.discord_enabled = false;
+        }
+        s
+    }
+
     /// Validate a ListenBrainz user token by hitting `/1/validate-token`.
     pub async fn validate_token(&self, token: &str) -> Result<String, String> {
+        if !self.is_online() {
+            return Err(crate::commands::context::OFFLINE_ERROR.into());
+        }
         let trimmed = token.trim();
         if trimmed.is_empty() {
             return Err("Token cannot be empty".into());
@@ -404,7 +508,7 @@ impl ScrobblerManager {
         is_playing: bool,
         position_nanosec: i64,
     ) {
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
         if !settings.discord_enabled || settings.scrobble_paused {
             let discord = Arc::clone(&self.discord);
             let client_id = settings.discord_client_id.clone();
@@ -535,7 +639,7 @@ impl ScrobblerManager {
     /// Query the current Discord connection status.
     pub async fn get_discord_status(&self) -> crate::discord::DiscordStatus {
         let mut d = self.discord.lock().await;
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
         if settings.discord_enabled
             && !settings.scrobble_paused
             && d.status() != crate::discord::DiscordStatus::Connected
@@ -547,7 +651,7 @@ impl ScrobblerManager {
 
     /// Submit a "Playing Now" listen to ListenBrainz when track playback starts.
     pub async fn on_now_playing(&self, song: &Song) {
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
         if !settings.scrobble_paused {
             crate::subsonic::report::spawn_now_playing(self.db.clone(), song);
         }
@@ -736,7 +840,7 @@ impl ScrobblerManager {
 
     /// Submit love/feedback when song rating changes.
     pub async fn on_song_rating(&self, song: &Song, rating: f32) {
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
         if !settings.listenbrainz_enabled || settings.scrobble_paused || !settings.scrobble_ratings
         {
             return;
@@ -779,7 +883,7 @@ impl ScrobblerManager {
 
     /// Submit love/hate tri-state feedback when song loved state changes.
     pub async fn on_song_loved(&self, song: &Song, loved: i32) {
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
         if !settings.listenbrainz_enabled || settings.scrobble_paused || !settings.scrobble_ratings
         {
             return;
@@ -819,9 +923,11 @@ impl ScrobblerManager {
         });
     }
 
-    /// Bulk synchronize all favourite tracks with MusicBrainz Recording IDs to ListenBrainz as loved tracks.
-    pub async fn sync_favourites(&self) -> Result<SyncFavouritesResult, String> {
-        let settings = self.get_settings().await;
+    /// Two-way ratings sync (#1386). Pulls ListenBrainz love/hate feedback and
+    /// the user's CritiqueBrainz star ratings into the library (remote wins),
+    /// then pushes local loves/hates ListenBrainz doesn't have yet.
+    pub async fn sync_ratings(&self) -> Result<SyncRatingsResult, String> {
+        let settings = self.effective_settings().await;
         if !settings.listenbrainz_enabled {
             return Err("ListenBrainz scrobbling is not enabled".into());
         }
@@ -829,65 +935,61 @@ impl ScrobblerManager {
         if token.is_empty() {
             return Err("ListenBrainz user token is not configured".into());
         }
-
-        let songs: Vec<Song> = {
-            let conn = self.db.pool.get().map_err(|e| e.to_string())?;
-            let sql = format!(
-                "SELECT {} FROM songs
-                 WHERE loved = 1
-                   AND source IN ({lib})
-                   AND unavailable = 0
-                   AND not_included = 0",
-                crate::collection::SONG_SELECT_COLS,
-                lib = *LIBRARY_SOURCES_SQL
-            );
-            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-            let rows = stmt
-                .query_map([], crate::collection::row_to_song)
-                .map_err(|e| e.to_string())?;
-            rows.filter_map(|r| r.ok()).collect()
+        let username = settings
+            .listenbrainz_username
+            .as_deref()
+            .filter(|u| !u.trim().is_empty())
+            .ok_or("ListenBrainz username is unknown: validate your token first")?
+            .to_string();
+        let cb_input = settings.critiquebrainz_user_id.trim();
+        let cb_user = if cb_input.is_empty() {
+            None
+        } else {
+            Some(
+                crate::ratings_sync::parse_critiquebrainz_user_id(cb_input)
+                    .ok_or("CritiqueBrainz user ID must be a profile URL or UUID")?,
+            )
         };
 
-        let total_favourites = songs.len() as u32;
-        let mut synced = 0u32;
-        let mut skipped_no_mbid = 0u32;
-        let mut failed = 0u32;
-        let mut seen_mbids = std::collections::HashSet::new();
+        let remote = self.fetch_listenbrainz_feedback(&username, &token).await?;
+        let critique = match &cb_user {
+            Some(id) => Some(self.fetch_critiquebrainz_ratings(id).await?),
+            None => None,
+        };
 
-        for song in songs {
-            let mbid = match &song.musicbrainz_recording_id {
-                Some(id) if !id.trim().is_empty() => id.trim().to_string(),
-                _ => {
-                    skipped_no_mbid += 1;
-                    continue;
-                }
-            };
-
-            if !seen_mbids.insert(mbid.clone()) {
-                // Already synced this recording_mbid in this batch
-                synced += 1;
-                continue;
+        let (mut outcome, pushes) = {
+            let mut conn = self.db.pool.get().map_err(|e| e.to_string())?;
+            let mut outcome = crate::ratings_sync::apply_feedback(&mut conn, &remote)
+                .map_err(|e| e.to_string())?;
+            if let Some(ratings) = &critique {
+                let stars = crate::ratings_sync::apply_critique_ratings(&mut conn, ratings)
+                    .map_err(|e| e.to_string())?;
+                outcome.song_ratings = stars.song_ratings;
+                outcome.album_ratings = stars.album_ratings;
+                outcome.song_ids.extend(stars.song_ids);
             }
+            let pushes =
+                crate::ratings_sync::pending_pushes(&conn, &remote).map_err(|e| e.to_string())?;
+            (outcome, pushes)
+        };
 
-            let payload = FeedbackRequest {
-                recording_mbid: mbid,
-                score: 1,
-            };
-
+        let mut pushed = 0u32;
+        let mut failed = 0u32;
+        for (mbid, score) in pushes {
             let res = self
                 .client
                 .post(format!(
                     "{LISTENBRAINZ_API_BASE}/feedback/recording-feedback"
                 ))
                 .header("Authorization", format!("Token {token}"))
-                .json(&payload)
+                .json(&FeedbackRequest {
+                    recording_mbid: mbid,
+                    score,
+                })
                 .send()
                 .await;
-
             match res {
-                Ok(resp) if resp.status().is_success() => {
-                    synced += 1;
-                }
+                Ok(resp) if resp.status().is_success() => pushed += 1,
                 Ok(resp) => {
                     log::warn!("ListenBrainz feedback returned HTTP {}", resp.status());
                     failed += 1;
@@ -900,16 +1002,125 @@ impl ScrobblerManager {
                     failed += 1;
                 }
             }
-
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
-        Ok(SyncFavouritesResult {
-            total_favourites,
-            synced,
-            skipped_no_mbid,
+        outcome.song_ids.sort_unstable();
+        outcome.song_ids.dedup();
+        Ok(SyncRatingsResult {
+            pulled_loved: outcome.loved,
+            pulled_hated: outcome.hated,
+            pulled_song_ratings: outcome.song_ratings,
+            pulled_album_ratings: outcome.album_ratings,
+            pushed,
             failed,
+            critiquebrainz_checked: critique.is_some(),
+            changed_song_ids: outcome.song_ids,
         })
+    }
+
+    /// Every love (1) and hate (-1) the user has recorded on ListenBrainz,
+    /// keyed by recording MBID.
+    async fn fetch_listenbrainz_feedback(
+        &self,
+        username: &str,
+        token: &str,
+    ) -> Result<std::collections::HashMap<String, i32>, String> {
+        const PAGE: usize = 100;
+        let mut feedback = std::collections::HashMap::new();
+        let mut offset = 0usize;
+        loop {
+            let resp = self
+                .client
+                .get(format!(
+                    "{LISTENBRAINZ_API_BASE}/feedback/user/{}/get-feedback?count={PAGE}&offset={offset}",
+                    percent_encoding::utf8_percent_encode(
+                        username,
+                        percent_encoding::NON_ALPHANUMERIC
+                    )
+                ))
+                .header("Authorization", format!("Token {token}"))
+                .send()
+                .await
+                .map_err(|e| {
+                    format!(
+                        "ListenBrainz feedback request failed: {}",
+                        format_error_chain(&e)
+                    )
+                })?;
+            if !resp.status().is_success() {
+                return Err(format!(
+                    "ListenBrainz feedback returned HTTP {}",
+                    resp.status()
+                ));
+            }
+            let page: FeedbackPage = resp
+                .json()
+                .await
+                .map_err(|e| format!("Unreadable ListenBrainz feedback: {e}"))?;
+            let received = page.feedback.len();
+            for item in page.feedback {
+                if let Some(mbid) = item.recording_mbid.filter(|m| !m.trim().is_empty()) {
+                    feedback.insert(mbid.trim().to_string(), item.score);
+                }
+            }
+            offset += received;
+            if received == 0 || offset >= page.total_count {
+                return Ok(feedback);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// The user's published CritiqueBrainz reviews that carry a star rating,
+    /// for recordings and release groups.
+    ///
+    /// `reviewer_uuid` is the public CritiqueBrainz profile ID (it appears in
+    /// profile URLs), not a credential, and the request goes over HTTPS. CodeQL's
+    /// `rust/cleartext-transmission` flags it by its `user_id` query-key name;
+    /// that alert is dismissed as a false positive.
+    async fn fetch_critiquebrainz_ratings(
+        &self,
+        reviewer_uuid: &str,
+    ) -> Result<Vec<crate::ratings_sync::CritiqueRating>, String> {
+        const PAGE: usize = 50;
+        let mut ratings = Vec::new();
+        let mut offset = 0usize;
+        loop {
+            let resp = self
+                .client
+                .get(format!(
+                    "{CRITIQUEBRAINZ_API_BASE}/review/?user_id={reviewer_uuid}&limit={PAGE}&offset={offset}"
+                ))
+                .send()
+                .await
+                .map_err(|e| format!("CritiqueBrainz request failed: {}", format_error_chain(&e)))?;
+            if !resp.status().is_success() {
+                return Err(format!("CritiqueBrainz returned HTTP {}", resp.status()));
+            }
+            let page: CritiquePage = resp
+                .json()
+                .await
+                .map_err(|e| format!("Unreadable CritiqueBrainz reviews: {e}"))?;
+            let received = page.reviews.len();
+            for review in page.reviews {
+                if review.is_draft || review.is_hidden {
+                    continue;
+                }
+                if let Some(stars) = review.rating {
+                    ratings.push(crate::ratings_sync::CritiqueRating {
+                        entity_type: review.entity_type,
+                        entity_mbid: review.entity_id,
+                        stars: stars as f32,
+                    });
+                }
+            }
+            offset += received;
+            if received == 0 || offset >= page.count {
+                return Ok(ratings);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
 
     /// Retrieve live scrobble cache statistics.
@@ -949,10 +1160,12 @@ impl ScrobblerManager {
         let client = self.client.clone();
         let db = self.db.clone();
         let settings_arc = self.settings.clone();
+        let online = self.online.clone();
 
         tauri::async_runtime::spawn(async move {
             let settings = settings_arc.lock().await.clone();
-            if !settings.listenbrainz_enabled
+            if !online.load(std::sync::atomic::Ordering::Relaxed)
+                || !settings.listenbrainz_enabled
                 || settings.scrobble_paused
                 || settings.listenbrainz_token.trim().is_empty()
             {
@@ -968,7 +1181,10 @@ impl ScrobblerManager {
 
     /// Drain pending scrobbles from the database cache and submit them to ListenBrainz.
     pub async fn flush_cache_now(&self) -> Result<u32, String> {
-        let settings = self.get_settings().await;
+        let settings = self.effective_settings().await;
+        if !self.is_online() {
+            return Err(crate::commands::context::OFFLINE_ERROR.into());
+        }
         if settings.listenbrainz_token.trim().is_empty() {
             return Err("ListenBrainz user token is not configured".into());
         }
@@ -1134,6 +1350,43 @@ fn describe_error_response(status: reqwest::StatusCode, body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Offline master toggle (#1398): ListenBrainz entry points refuse before
+    /// any request, and the effective settings read ListenBrainz/Discord as off
+    /// without touching what the user saved.
+    #[tokio::test]
+    async fn offline_suspends_listenbrainz_and_discord_without_changing_saved_settings() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(Database::new(temp_dir.path().to_path_buf()).unwrap());
+        let manager = ScrobblerManager::new(Arc::clone(&db));
+        let saved = ScrobblerSettings {
+            listenbrainz_enabled: true,
+            listenbrainz_token: "token".into(),
+            discord_enabled: true,
+            ..ScrobblerSettings::default()
+        };
+        manager.save_settings(saved).await.unwrap();
+
+        manager.set_online(false).await;
+
+        assert!(!manager.is_online());
+        let effective = manager.effective_settings().await;
+        assert!(!effective.listenbrainz_enabled && !effective.discord_enabled);
+        let persisted = manager.get_settings().await;
+        assert!(persisted.listenbrainz_enabled && persisted.discord_enabled);
+        assert_eq!(
+            manager.validate_token("token").await,
+            Err(crate::commands::context::OFFLINE_ERROR.to_string())
+        );
+        assert_eq!(
+            manager.flush_cache_now().await,
+            Err(crate::commands::context::OFFLINE_ERROR.to_string())
+        );
+        assert_eq!(
+            manager.sync_ratings().await.map(|_| ()),
+            Err("ListenBrainz scrobbling is not enabled".to_string())
+        );
+    }
 
     #[test]
     fn error_response_keeps_api_message_but_drops_html_pages() {

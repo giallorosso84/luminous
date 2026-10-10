@@ -8,10 +8,16 @@
 
   const DEFAULT_SECTION = "getting-started";
   const STORAGE_KEY = "luminous-guide-section";
-  const FR = root.lang === "fr";
-  const LABELS = FR
-    ? { fit: "Ajuster à l’écran", actual: "Taille réelle (1:1)", close: "Fermer (Échap)" }
-    : { fit: "Fit to screen", actual: "Actual size (1:1)", close: "Close (Esc)" };
+  const LABELS_BY_LANG = {
+    en: { fit: "Fit to screen", actual: "Actual size (1:1)", close: "Close (Esc)" },
+    fr: { fit: "Ajuster à l’écran", actual: "Taille réelle (1:1)", close: "Fermer (Échap)" },
+    de: { fit: "An Bildschirm anpassen", actual: "Originalgröße (1:1)", close: "Schließen (Esc)" },
+    es: { fit: "Ajustar a la pantalla", actual: "Tamaño real (1:1)", close: "Cerrar (Esc)" },
+    it: { fit: "Adatta allo schermo", actual: "Dimensioni reali (1:1)", close: "Chiudi (Esc)" },
+    ru: { fit: "По размеру экрана", actual: "Реальный размер (1:1)", close: "Закрыть (Esc)" },
+    uk: { fit: "За розміром екрана", actual: "Справжній розмір (1:1)", close: "Закрити (Esc)" },
+  };
+  const LABELS = LABELS_BY_LANG[root.lang] || LABELS_BY_LANG.en;
 
   // ── Theme: mirror the app's colours when embedded in the Help view ──
 
@@ -46,7 +52,25 @@
     const bg = cs.getPropertyValue("--bg-main").trim();
     const lum = bg ? luminance(bg) : null;
     if (lum !== null) root.style.colorScheme = lum < 0.5 ? "dark" : "light";
+    syncScreenshots();
   }
+
+  // ── Screenshots: show the light or dark capture matching the guide's scheme ──
+  // The markup points at the dark capture (assets/{locale}/screenshots/dark/x.png); swap the
+  // folder to follow the app theme when embedded, else the OS preference.
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  function syncScreenshots() {
+    const scheme = root.style.colorScheme || (darkQuery.matches ? "dark" : "light");
+    for (const img of document.querySelectorAll("img[src*='/dark/'], img[src*='/light/']")) {
+      const next = img.getAttribute("src").replace(/\/(?:light|dark)\//, `/${scheme}/`);
+      if (next !== img.getAttribute("src")) {
+        // Until a light capture exists, fall back to the dark one.
+        img.onerror = () => { img.onerror = null; img.setAttribute("src", next.replace("/light/", "/dark/")); };
+        img.setAttribute("src", next);
+      }
+    }
+  }
+  darkQuery.addEventListener("change", syncScreenshots);
 
   function watchParentTheme() {
     let parentDoc;
@@ -214,5 +238,6 @@
     initSections();
     initLightbox();
     watchParentTheme();
+    syncScreenshots();
   });
 })();

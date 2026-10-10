@@ -28,20 +28,37 @@ export const RIGHT_PANEL_MAX_WIDTH_PX = 480;
 /** Step size used by the keyboard-accessible resize handles for the sidebar/right panel. */
 export const PANEL_RESIZE_STEP_PX = 10;
 
-/** Window width below which the sidebar auto-collapses to its icon rail (routes/+layout.svelte, collection.svelte.ts). */
-export const MEDIUM_BREAKPOINT_WIDTH_PX = 1024;
+/*
+ * Window-size tiers (issue #1154). Width tiers are named by what they decide, and
+ * their values mirror the --breakpoint-* tokens in src/app.css so the Tailwind
+ * sm:/md:/lg: prefixes and these constants can never disagree
+ * (breakpoints.test.ts enforces it). Use these for app-shell decisions only;
+ * anything that depends on the space a component actually gets (which moves with the
+ * sidebar and right panel) should use a container query instead.
+ *
+ *   compact   < 640    compact playbar, forced Immersive Mode
+ *   medium    640-1023 full playbar, sidebar on its icon rail
+ *   expanded  >= 1024  full sidebar
+ * with a sub-step at 768 where the right panel and playbar extras appear.
+ */
 
-/** Window width below which the right panel auto-hides and playbar spectrum/info/lyrics buttons hide, matching the md breakpoint (routes/+layout.svelte, PlayerBar.svelte). */
-export const RIGHT_PANEL_AUTO_HIDE_WIDTH_PX = 768;
+/** Narrow step inside the compact tier (Tailwind `xs`): Previous button and immersive cover size appear. */
+export const BREAKPOINT_NARROW_PX = 420;
 
-/** Window width below which Immersive Mode force-engages and PlayerBar transitions to Compact tier, since sidebars and full playdock no longer fit (routes/+layout.svelte, windowLayout.svelte.ts). */
-export const SMALL_BREAKPOINT_WIDTH_PX = 640;
+/** Width at which the layout leaves "compact": below it Immersive Mode force-engages and the PlayerBar goes Compact. Tailwind `sm`. */
+export const BREAKPOINT_MEDIUM_PX = 640;
 
-/** Window height below which the app collapses to showing only the PlayerBar (routes/+layout.svelte, collection.svelte.ts). */
-export const PLAYBAR_ONLY_HEIGHT_BREAKPOINT_PX = 160;
+/** Width below which the right panel auto-hides and playbar spectrum/info/lyrics buttons hide. Tailwind `md`. */
+export const BREAKPOINT_RIGHT_PANEL_PX = 768;
 
-/** Window height below which detail-view hero headers (Playlist/Album/Artist) hide, so their song table gets the space instead (collection.svelte.ts). */
-export const DETAIL_HEADER_COLLAPSE_HEIGHT_PX = 600;
+/** Width below which the sidebar auto-collapses to its icon rail. Tailwind `lg`. */
+export const BREAKPOINT_EXPANDED_PX = 1024;
+
+/** Height below which the app collapses to showing only the PlayerBar (routes/+layout.svelte, collection.svelte.ts). */
+export const HEIGHT_BREAKPOINT_MINIMAL_PX = 160;
+
+/** Height below which detail-view hero headers (Playlist/Album/Artist) hide, so their song table gets the space instead (collection.svelte.ts). */
+export const HEIGHT_BREAKPOINT_SHORT_PX = 600;
 
 /**
  * Per-cover offset/scale/opacity step used to fan out a stack of album
@@ -65,3 +82,12 @@ export const LIGHTNESS_STEP = 0.02;
 
 /** How long a toast notification stays visible before auto-dismissing. */
 export const TOAST_DURATION_MS = 4000;
+
+/**
+ * CoverStack container-query thresholds (px of the card's own width) at which the 4th, 5th and
+ * 6th fanned covers appear. Mirrored by the `@container (min-width: …)` rules in CoverStack.svelte
+ * (CSS can't import them); breakpoints.test.ts keeps them equal.
+ */
+export const COVER_STACK_FOURTH_COVER_PX = 150;
+export const COVER_STACK_FIFTH_COVER_PX = 180;
+export const COVER_STACK_SIXTH_COVER_PX = 210;

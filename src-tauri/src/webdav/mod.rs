@@ -22,6 +22,48 @@ pub struct WebDavItem {
     pub etag: Option<String>,
 }
 
+/// Removes any `user:pass@` userinfo from a URL, re-serialised in normal form.
+/// Unparseable input is returned unchanged.
+pub fn strip_url_credentials(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(mut parsed) => {
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    }
+}
+
+/// The `Authorization: Basic ...` value for a credential-free song URL, from the
+/// saved server it belongs to (#1492). Prefers the most specific server when
+/// several share a host. `None` when no saved server matches or it has no
+/// credentials, so plain HTTP streams are untouched.
+pub fn resolve_auth_header(conn: &rusqlite::Connection, song_url: &str) -> Option<String> {
+    let mut stmt = conn
+        .prepare("SELECT url, username, password FROM webdav_servers")
+        .ok()?;
+    let servers = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .ok()?;
+    let (_, user, pass) = servers
+        .flatten()
+        .filter(|(url, ..)| crate::collection::song_matches_webdav_server(song_url, url))
+        .max_by_key(|(url, ..)| {
+            reqwest::Url::parse(url).map_or(0, |u| u.path().trim_end_matches('/').len())
+        })?;
+    let (user, pass) = (user?, pass?);
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+    Some(format!("Basic {encoded}"))
+}
+
 /// WebDAV HTTP client.
 #[derive(Clone)]
 pub struct WebDavClient {
@@ -75,23 +117,11 @@ impl WebDavClient {
         format!("{}{clean_path}", self.base_url)
     }
 
-    /// Resolve a path to a full URL with credentials embedded as URL userinfo
-    /// (`scheme://user:pass@host/path`). The audio engine only ever has the
-    /// bare URL string stored on the `Song` to work with — no separate
-    /// credential lookup is available at playback time — so this is how
-    /// Basic Auth reaches WebDAV streaming requests (see `audio.rs`'s
-    /// `HttpRangeReader`, which extracts and strips the userinfo again
-    /// before sending the request).
-    pub fn build_authenticated_url(&self, path: &str) -> String {
-        let base = self.build_url(path);
-        if let (Some(u), Some(p)) = (&self.username, &self.password) {
-            if let Ok(mut parsed) = reqwest::Url::parse(&base) {
-                if parsed.set_username(u).is_ok() && parsed.set_password(Some(p)).is_ok() {
-                    return parsed.to_string();
-                }
-            }
-        }
-        base
+    /// The URL stored as a song's `path`/`url`/`stream_url`: normalised the way
+    /// `strip_url_credentials` leaves it, and never carrying credentials. Playback
+    /// looks the server's credentials up when it opens the track (#1492).
+    pub fn playback_url(&self, path: &str) -> String {
+        strip_url_credentials(&self.build_url(path))
     }
 
     /// Test server connectivity and authentication using PROPFIND with Depth: 0.
@@ -191,110 +221,334 @@ impl WebDavClient {
         Ok(bytes.to_vec())
     }
 
+    /// Fetches `[start, end)` of the file into `buf` at the same offsets (zero-extending
+    /// it), skipping whatever the head probe already holds. False if it came up short.
+    fn fill_probe_range(
+        &self,
+        url: &str,
+        buf: &mut Vec<u8>,
+        head_len: usize,
+        start: usize,
+        end: usize,
+    ) -> bool {
+        let from = start.max(head_len);
+        if end <= from {
+            return true;
+        }
+        match self.fetch_range(url, from as u64, (end - 1) as u64) {
+            Ok(bytes) => {
+                if buf.len() < from + bytes.len() {
+                    buf.resize(from + bytes.len(), 0);
+                }
+                buf[from..from + bytes.len()].copy_from_slice(&bytes);
+                bytes.len() == end - from
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Reads past the head probe when the tags don't fit in it: a FLAC with a large
+    /// padding or picture block, or an MP3 with a large ID3v2 tag (embedded art). The
+    /// head is cut mid-tag otherwise and the file's tags are lost. FLAC padding and
+    /// embedded pictures are skipped, not downloaded. Returns the (possibly longer) buffer, plus whether it
+    /// already holds every tag so the tail probe can be skipped.
+    fn extend_probe_head(
+        &self,
+        url: &str,
+        mut buf: Vec<u8>,
+        content_length: u64,
+    ) -> (Vec<u8>, bool) {
+        const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
+        const FLAC_BLOCK_PADDING: u8 = 1;
+        const FLAC_BLOCK_PICTURE: u8 = 6;
+        const FLAC_BLOCK_WINDOW: usize = 16 * 1024;
+        let head_len = buf.len();
+        if content_length as usize <= head_len {
+            return (buf, false);
+        }
+
+        if buf.starts_with(b"ID3") && buf.len() >= 10 {
+            let size = ((buf[6] as usize & 0x7f) << 21)
+                | ((buf[7] as usize & 0x7f) << 14)
+                | ((buf[8] as usize & 0x7f) << 7)
+                | (buf[9] as usize & 0x7f);
+            // The tag plus a little audio: the MPEG reader insists on finding a frame.
+            let end = (size + 10 + 128 * 1024).min(content_length as usize);
+            if end > head_len && size <= MAX_METADATA_BYTES {
+                self.fill_probe_range(url, &mut buf, head_len, head_len, end);
+            }
+            return (buf, false);
+        }
+
+        if buf.starts_with(b"fLaC") {
+            // `buf[..have]` is real data or a stand-in; the loop only reads past it.
+            let mut have = head_len;
+            let mut pos = 4usize;
+            let mut fetched = 0usize;
+            loop {
+                if pos + 4 > have {
+                    // Read a window, not 4 bytes: it usually holds the block too, and
+                    // the next header, so a small block costs one request instead of two.
+                    let to = (pos + FLAC_BLOCK_WINDOW).min(content_length as usize);
+                    if to < pos + 4 || !self.fill_probe_range(url, &mut buf, have, pos, to) {
+                        return (buf, false);
+                    }
+                    have = have.max(to);
+                }
+                let header = buf[pos];
+                let is_last = header & 0x80 != 0;
+                let block_type = header & 0x7f;
+                let len = ((buf[pos + 1] as usize) << 16)
+                    | ((buf[pos + 2] as usize) << 8)
+                    | buf[pos + 3] as usize;
+                let end = pos + 4 + len;
+                if end > have {
+                    if block_type == FLAC_BLOCK_PADDING || block_type == FLAC_BLOCK_PICTURE {
+                        // Padding is all zeros: stand in for it instead of downloading
+                        // it. An embedded picture is skipped the same way, relabelled as
+                        // padding so lofty steps over it: WebDAV sync keeps no embedded
+                        // art (cover art comes from the folder image), so its bytes
+                        // would only be downloaded to be thrown away.
+                        if block_type == FLAC_BLOCK_PICTURE {
+                            buf[pos] = (header & 0x80) | FLAC_BLOCK_PADDING;
+                        }
+                        if buf.len() < end {
+                            buf.resize(end, 0);
+                        }
+                        have = end;
+                    } else {
+                        fetched += len;
+                        if fetched > MAX_METADATA_BYTES
+                            || !self.fill_probe_range(url, &mut buf, have, pos + 4, end)
+                        {
+                            return (buf, false);
+                        }
+                        have = end;
+                    }
+                }
+                pos = end;
+                if is_last {
+                    return (buf, true);
+                }
+            }
+        }
+
+        (buf, false)
+    }
+
     /// Probes remote file metadata using byte ranges.
-    /// Fetches initial 256KB for ID3v2/FLAC/Vorbis headers and trailing 128KB for ID3v1/APEv2.
+    /// Fetches the first 256KB for ID3v2/FLAC/Vorbis headers, then the trailing 128KB
+    /// (ID3v1/APEv2, an MP4 `moov` atom, an Ogg last page) only if the head left the
+    /// duration or a core tag unresolved: most files cost one request, not two.
     pub fn probe_song_tags(&self, url: &str, content_length: u64) -> Result<Song> {
         let initial_probe_size = 256 * 1024;
         let head_size = initial_probe_size.min(content_length);
         let head_bytes = self.fetch_range(url, 0, head_size.saturating_sub(1))?;
 
-        let tail_bytes = if content_length > head_size {
-            let tail_probe_size = 128 * 1024;
-            let tail_start = content_length
-                .saturating_sub(tail_probe_size)
-                .max(head_size);
-            self.fetch_range(url, tail_start, content_length.saturating_sub(1))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        // A tag block bigger than the head probe (FLAC padding or embedded art,
+        // a large ID3v2 tag) would be cut off and the tags lost: read the rest.
+        let (head_bytes, metadata_complete) =
+            self.extend_probe_head(url, head_bytes, content_length);
 
-        let mut probe_buffer = Vec::with_capacity(head_bytes.len() + tail_bytes.len());
-        probe_buffer.extend_from_slice(&head_bytes);
-        if !tail_bytes.is_empty() {
-            probe_buffer.extend_from_slice(&tail_bytes);
-        }
-
-        let mut cursor = Cursor::new(probe_buffer);
-        let filetype = detect_filetype_from_url(url);
-
-        let mut song = Song {
-            source: SongSource::WebDav,
-            filetype,
-            url: Some(url.to_string()),
-            stream_url: Some(url.to_string()),
-            filesize: Some(content_length as i64),
-            ..Default::default()
-        };
-
-        if let Ok(tagged_file) = Probe::new(&mut cursor)
-            .guess_file_type()
-            .map_err(|e| anyhow::anyhow!(e))
-            .and_then(|p| p.read().map_err(|e| anyhow::anyhow!(e)))
+        let mut song = parse_probe_buffer(&head_bytes, url, content_length);
+        let head_len = head_bytes.len() as u64;
+        if !metadata_complete
+            && content_length > head_len
+            && !head_resolves_song(&song, &head_bytes)
         {
-            let properties = tagged_file.properties();
-            let duration_ns = (properties.duration().as_secs_f64() * 1_000_000_000.0) as i64;
-            song.length_nanosec = Some(duration_ns);
-            song.bitrate = properties.audio_bitrate().map(|b| b as i32);
-            song.samplerate = properties.sample_rate().map(|r| r as i32);
-            song.channels = properties.channels().map(|c| c as i32);
-            song.bitdepth = properties.bit_depth().map(|b| b as i32);
-
-            let mut candidate_tags = Vec::new();
-            if let Some(primary) = tagged_file.primary_tag() {
-                candidate_tags.push(primary);
-            }
-            for t in tagged_file.tags() {
-                if !candidate_tags
-                    .iter()
-                    .any(|existing| std::ptr::eq(*existing, t))
-                {
-                    candidate_tags.push(t);
-                }
-            }
-
-            for tag in candidate_tags {
-                use lofty::tag::{Accessor, ItemKey};
-                if song.title.is_none() {
-                    song.title = tag.title().map(|t| t.to_string());
-                }
-                if song.artist.is_none() {
-                    song.artist = tag.artist().map(|a| a.to_string());
-                }
-                if song.album.is_none() {
-                    song.album = tag.album().map(|a| a.to_string());
-                }
-                if song.genre.is_none() {
-                    song.genre = tag.genre().map(|g| g.to_string());
-                }
-                if song.track.is_none() {
-                    song.track = tag.track().map(|t| t as i32);
-                }
-                if song.disc.is_none() {
-                    song.disc = tag.disk().map(|d| d as i32);
-                }
-                if song.year.is_none() {
-                    song.year = tag.date().map(|d| d.year as i32).or_else(|| {
-                        tag.get_string(ItemKey::Year)
-                            .and_then(|s| s.trim().parse::<i32>().ok())
-                    });
-                }
+            let tail_probe_size = 128 * 1024;
+            let tail_start = content_length.saturating_sub(tail_probe_size).max(head_len);
+            if let Ok(tail_bytes) =
+                self.fetch_range(url, tail_start, content_length.saturating_sub(1))
+            {
+                let mut probe_buffer = head_bytes;
+                probe_buffer.extend_from_slice(&tail_bytes);
+                song = parse_probe_buffer(&probe_buffer, url, content_length);
             }
         }
-
-        // Fallback: if title is missing, infer from filename
-        if song.title.is_none() {
-            if let Some(filename) = url.split('/').next_back() {
-                let name = filename.split('?').next().unwrap_or(filename);
-                if let Some(idx) = name.rfind('.') {
-                    song.title = Some(name[..idx].to_string());
-                } else {
-                    song.title = Some(name.to_string());
-                }
-            }
-        }
-
+        title_from_filename_if_missing(&mut song, url);
         Ok(song)
+    }
+}
+
+/// Whether the head alone settled everything the tail could still change.
+///
+/// FLAC keeps its duration (STREAMINFO) and every tag in the header, so any head that
+/// yields a duration is final. MP3 carries its tags in an ID3v2 header, but without
+/// one (or with core tags missing) ID3v1/APEv2 in the last bytes may still supply
+/// them. Every other format falls back to the tail: an MP4 `moov` atom or an Ogg last
+/// page decides the duration, and a head-only parse of those fails outright.
+fn head_resolves_song(song: &Song, head: &[u8]) -> bool {
+    let has_duration = song.length_nanosec.is_some_and(|d| d > 0);
+    match song.filetype {
+        FileType::Flac => has_duration,
+        FileType::Mp3 => {
+            head.starts_with(b"ID3")
+                && has_duration
+                && song.title.is_some()
+                && song.artist.is_some()
+                && song.album.is_some()
+        }
+        _ => false,
+    }
+}
+
+/// Byte length of a leading ID3v2 tag (header and footer included), or 0 if there is none.
+fn id3v2_len(buffer: &[u8]) -> usize {
+    if buffer.len() < 10 || !buffer.starts_with(b"ID3") {
+        return 0;
+    }
+    let size = buffer[6..10]
+        .iter()
+        .fold(0usize, |acc, b| (acc << 7) | (*b & 0x7f) as usize);
+    let footer = if buffer[5] & 0x10 != 0 { 10 } else { 0 };
+    10 + size + footer
+}
+
+/// Offset of the first FLAC audio frame, found by walking the metadata block headers;
+/// 0 if the walk runs off the buffer.
+fn flac_audio_start(buffer: &[u8]) -> usize {
+    let mut pos = 4;
+    while let Some(h) = buffer.get(pos..pos + 4) {
+        let end = pos + 4 + ((h[1] as usize) << 16 | (h[2] as usize) << 8 | h[3] as usize);
+        if h[0] & 0x80 != 0 {
+            return end;
+        }
+        pos = end;
+    }
+    0
+}
+
+/// Replaces the duration and bitrate lofty derived from a truncated probe buffer.
+///
+/// Lofty can only see the bytes we fetched, so anything computed from the stream length
+/// is wrong: an MP3 without a Xing/Info/VBRI header gets a duration estimated from the
+/// buffer, and a FLAC gets an average bitrate over the buffer. `content_length` is the
+/// real size, so recompute those two values from it.
+fn correct_size_dependent_properties(song: &mut Song, buffer: &[u8], content_length: u64) {
+    match song.filetype {
+        FileType::Flac => {
+            // STREAMINFO makes the duration exact; only the bitrate depends on size.
+            let secs = song.length_nanosec.unwrap_or(0) as f64 / 1e9;
+            if secs > 0.0 {
+                // Lofty's own figure counts audio only, not the tags or embedded art.
+                let audio_bytes = content_length.saturating_sub(flac_audio_start(buffer) as u64);
+                song.bitrate = Some((audio_bytes as f64 * 8.0 / secs / 1000.0).round() as i32);
+            }
+        }
+        FileType::Mp3 => {
+            let audio_start = id3v2_len(buffer);
+            let Some(kbps) = song.bitrate.filter(|b| *b > 0) else {
+                return;
+            };
+            let frame_header_end = (audio_start + 4096).min(buffer.len());
+            let has_vbr_header = buffer
+                .get(audio_start..frame_header_end)
+                .is_some_and(|frame| {
+                    [&b"Xing"[..], b"Info", b"VBRI"]
+                        .iter()
+                        .any(|tag| frame.windows(tag.len()).any(|w| w == *tag))
+                });
+            // Only a head that reaches the first frame can prove the header is absent.
+            if has_vbr_header || audio_start >= buffer.len() {
+                return;
+            }
+            let audio_bytes = (content_length as usize).saturating_sub(audio_start) as f64;
+            let secs = audio_bytes * 8.0 / (kbps as f64 * 1000.0);
+            song.length_nanosec = Some((secs * 1e9) as i64);
+        }
+        _ => {}
+    }
+}
+
+/// Parses tags and stream properties out of a probe buffer (the head, or head + tail).
+fn parse_probe_buffer(buffer: &[u8], url: &str, content_length: u64) -> Song {
+    let mut cursor = Cursor::new(buffer);
+    let filetype = detect_filetype_from_url(url);
+
+    let mut song = Song {
+        source: SongSource::WebDav,
+        filetype,
+        url: Some(url.to_string()),
+        stream_url: Some(url.to_string()),
+        filesize: Some(content_length as i64),
+        ..Default::default()
+    };
+
+    let parsed = Probe::new(&mut cursor)
+        .guess_file_type()
+        .map_err(|e| anyhow::anyhow!(e))
+        .and_then(|p| p.read().map_err(|e| anyhow::anyhow!(e)));
+    if let Err(e) = &parsed {
+        log::warn!("Could not read tags from {url}: {e}");
+    }
+    if let Ok(tagged_file) = parsed {
+        let properties = tagged_file.properties();
+        let duration_ns = (properties.duration().as_secs_f64() * 1_000_000_000.0) as i64;
+        song.length_nanosec = Some(duration_ns);
+        song.bitrate = properties.audio_bitrate().map(|b| b as i32);
+        if (buffer.len() as u64) < content_length {
+            correct_size_dependent_properties(&mut song, buffer, content_length);
+        }
+        song.samplerate = properties.sample_rate().map(|r| r as i32);
+        song.channels = properties.channels().map(|c| c as i32);
+        song.bitdepth = properties.bit_depth().map(|b| b as i32);
+
+        let mut candidate_tags = Vec::new();
+        if let Some(primary) = tagged_file.primary_tag() {
+            candidate_tags.push(primary);
+        }
+        for t in tagged_file.tags() {
+            if !candidate_tags
+                .iter()
+                .any(|existing| std::ptr::eq(*existing, t))
+            {
+                candidate_tags.push(t);
+            }
+        }
+
+        for tag in candidate_tags {
+            use lofty::tag::{Accessor, ItemKey};
+            if song.title.is_none() {
+                song.title = tag.title().map(|t| t.to_string());
+            }
+            if song.artist.is_none() {
+                song.artist = tag.artist().map(|a| a.to_string());
+            }
+            if song.album.is_none() {
+                song.album = tag.album().map(|a| a.to_string());
+            }
+            if song.genre.is_none() {
+                song.genre = tag.genre().map(|g| g.to_string());
+            }
+            if song.track.is_none() {
+                song.track = tag.track().map(|t| t as i32);
+            }
+            if song.disc.is_none() {
+                song.disc = tag.disk().map(|d| d as i32);
+            }
+            if song.year.is_none() {
+                song.year = tag.date().map(|d| d.year as i32).or_else(|| {
+                    tag.get_string(ItemKey::Year)
+                        .and_then(|s| s.trim().parse::<i32>().ok())
+                });
+            }
+        }
+    }
+
+    song
+}
+
+/// Falls back to the file name for a title when the tags hold none.
+fn title_from_filename_if_missing(song: &mut Song, url: &str) {
+    if song.title.is_none() {
+        if let Some(filename) = url.split('/').next_back() {
+            let name = filename.split('?').next().unwrap_or(filename);
+            // URLs are percent-encoded; the title should read as the file name does.
+            let name = percent_encoding::percent_decode_str(name).decode_utf8_lossy();
+            let stem = name.rfind('.').map_or(&*name, |idx| &name[..idx]);
+            song.title = Some(stem.to_string());
+        }
     }
 }
 
@@ -321,6 +575,20 @@ pub fn detect_filetype_from_url(url: &str) -> FileType {
     } else {
         FileType::Unknown
     }
+}
+
+/// Whether a PROPFIND entry's `href` names the collection that was listed. A
+/// `Depth: 1` listing includes the collection itself, which must not be walked
+/// again as a child. Servers percent-encode hrefs (`/Alice%20in%20Chains/`) while a
+/// saved remote path is typed as-is (`/Alice in Chains`), so compare decoded paths.
+pub fn is_listed_collection(item_href: &str, listed_path: &str) -> bool {
+    use percent_encoding::percent_decode_str;
+    let decode = |p: &str| {
+        percent_decode_str(p.trim_end_matches('/'))
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    decode(item_href) == decode(listed_path)
 }
 
 /// Parse WebDAV XML PROPFIND multistatus response.
@@ -449,6 +717,24 @@ pub fn parse_propfind_response(xml: &str) -> Result<Vec<WebDavItem>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn listed_collection_matches_across_percent_encoding_and_trailing_slash() {
+        use super::is_listed_collection;
+        assert!(is_listed_collection(
+            "/Alice%20in%20Chains/",
+            "/Alice in Chains"
+        ));
+        assert!(is_listed_collection(
+            "/Alice%20in%20Chains/",
+            "/Alice%20in%20Chains"
+        ));
+        assert!(is_listed_collection("/music/", "/music"));
+        assert!(!is_listed_collection(
+            "/Alice%20in%20Chains/Jar%20of%20Flies/",
+            "/Alice in Chains"
+        ));
+    }
+
     use super::*;
 
     #[test]
@@ -493,8 +779,143 @@ mod tests {
         assert_eq!(items[1].etag.as_deref(), Some("\"abcd1234efgh\""));
     }
 
+    /// A FLAC whose tags sit behind more than the head probe's worth of data used
+    /// to lose them entirely (#1493): the probe reads on past a big picture block
+    /// and stands in for the padding that follows it instead of downloading it.
+    #[tokio::test]
+    async fn extend_probe_head_reads_past_the_head_and_skips_padding() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer};
+
+        fn block(kind: u8, last: bool, body: Vec<u8>) -> Vec<u8> {
+            let mut out = vec![kind | if last { 0x80 } else { 0 }];
+            out.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+            out.extend(body);
+            out
+        }
+        let picture = vec![7u8; 300_000];
+        let mut file = b"fLaC".to_vec();
+        file.extend(block(0, false, vec![1; 34]));
+        file.extend(block(6, false, picture.clone()));
+        file.extend(block(1, true, vec![0; 400_000]));
+        let metadata_len = file.len();
+        file.extend(vec![9u8; 1_000]); // audio frames
+        let served = file.clone();
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(move |req: &wiremock::Request| {
+                let (start, end) = req
+                    .headers
+                    .get(wiremock::http::HeaderName::from_static("range"))
+                    .and_then(|r| r.to_str().ok())
+                    .and_then(|r| r.strip_prefix("bytes="))
+                    .and_then(|r| r.split_once('-'))
+                    .map(|(s, e)| (s.parse::<usize>().unwrap(), e.parse::<usize>().unwrap()))
+                    .unwrap();
+                let end = end.min(served.len() - 1);
+                wiremock::ResponseTemplate::new(206).set_body_bytes(served[start..=end].to_vec())
+            })
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let url = format!("{base}/song.flac");
+        let total = file.len() as u64;
+        let head = file[..256 * 1024].to_vec();
+        let (buf, complete) = tokio::task::spawn_blocking(move || {
+            let client = WebDavClient::new(base, None, None).unwrap();
+            client.extend_probe_head(&url, head, total)
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            complete,
+            "every tag block was read, so the tail probe is skipped"
+        );
+        assert_eq!(buf.len(), metadata_len);
+        // The picture is relabelled as padding (header byte only), the rest of its
+        // body and all of the real padding are zero stand-ins.
+        let picture_header = 4 + 4 + 34;
+        assert_eq!(buf[picture_header], 1);
+        assert_eq!(
+            &buf[..picture_header],
+            &file[..picture_header],
+            "bytes before the picture are untouched"
+        );
+        let picture_end = picture_header + 4 + 300_000;
+        assert!(buf[256 * 1024..picture_end].iter().all(|&b| b == 0));
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            1,
+            "one window read finds the block after the picture; nothing else is fetched"
+        );
+    }
+
+    /// A small block past the head costs one request (a window holding its header,
+    /// body and the next header), not a header read plus a body read per block.
+    #[tokio::test]
+    async fn extend_probe_head_reads_small_blocks_past_the_head_in_one_request() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer};
+
+        fn block(kind: u8, last: bool, body: Vec<u8>) -> Vec<u8> {
+            let mut out = vec![kind | if last { 0x80 } else { 0 }];
+            out.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+            out.extend(body);
+            out
+        }
+        let mut file = b"fLaC".to_vec();
+        file.extend(block(0, false, vec![1; 34]));
+        file.extend(block(6, false, vec![7; 270_000]));
+        file.extend(block(3, false, vec![2; 2_000]));
+        file.extend(block(4, true, vec![3; 3_000]));
+        let metadata_len = file.len();
+        file.extend(vec![9u8; 50_000]);
+        let served = file.clone();
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(move |req: &wiremock::Request| {
+                let (start, end) = req
+                    .headers
+                    .get(wiremock::http::HeaderName::from_static("range"))
+                    .and_then(|r| r.to_str().ok())
+                    .and_then(|r| r.strip_prefix("bytes="))
+                    .and_then(|r| r.split_once('-'))
+                    .map(|(s, e)| (s.parse::<usize>().unwrap(), e.parse::<usize>().unwrap()))
+                    .unwrap();
+                let end = end.min(served.len() - 1);
+                wiremock::ResponseTemplate::new(206).set_body_bytes(served[start..=end].to_vec())
+            })
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let url = format!("{base}/song.flac");
+        let total = file.len() as u64;
+        let head = file[..256 * 1024].to_vec();
+        let expected = file[256 * 1024..metadata_len].to_vec();
+        let (buf, complete) = tokio::task::spawn_blocking(move || {
+            let client = WebDavClient::new(base, None, None).unwrap();
+            client.extend_probe_head(&url, head, total)
+        })
+        .await
+        .unwrap();
+
+        assert!(complete);
+        assert!(buf.len() >= metadata_len);
+        let picture_end = 4 + 4 + 34 + 4 + 270_000;
+        assert_eq!(
+            &buf[picture_end..metadata_len],
+            &expected[picture_end - 256 * 1024..]
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
     #[test]
-    fn test_build_authenticated_url_embeds_credentials() {
+    fn test_playback_url_never_embeds_credentials() {
         let client = WebDavClient::new(
             "http://127.0.0.1:8080".to_string(),
             Some("test".to_string()),
@@ -503,19 +924,45 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            client.build_authenticated_url("/Music/song.mp3"),
-            "http://test:test@127.0.0.1:8080/Music/song.mp3"
+            client.playback_url("/Music/song.mp3"),
+            "http://127.0.0.1:8080/Music/song.mp3"
         );
     }
 
     #[test]
-    fn test_build_authenticated_url_without_credentials_is_unchanged() {
-        let client = WebDavClient::new("http://127.0.0.1:8080".to_string(), None, None).unwrap();
-
+    fn test_strip_url_credentials() {
         assert_eq!(
-            client.build_authenticated_url("/Music/song.mp3"),
-            "http://127.0.0.1:8080/Music/song.mp3"
+            strip_url_credentials("http://u:p%40ss@host:8080/a b/c.mp3"),
+            "http://host:8080/a%20b/c.mp3"
         );
+        assert_eq!(
+            strip_url_credentials("https://host/Music/c.mp3"),
+            "https://host/Music/c.mp3"
+        );
+        assert_eq!(strip_url_credentials("not a url"), "not a url");
+    }
+
+    #[test]
+    fn test_resolve_auth_header_uses_the_matching_servers_credentials() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE webdav_servers (url TEXT, username TEXT, password TEXT);
+             INSERT INTO webdav_servers VALUES ('http://nas/dav', 'a', 'b');
+             INSERT INTO webdav_servers VALUES ('http://nas/dav/kids', 'c', 'd');
+             INSERT INTO webdav_servers VALUES ('http://open/dav', NULL, NULL);",
+        )
+        .unwrap();
+        // base64("a:b") / base64("c:d")
+        assert_eq!(
+            resolve_auth_header(&conn, "http://nas/dav/x.mp3").as_deref(),
+            Some("Basic YTpi")
+        );
+        assert_eq!(
+            resolve_auth_header(&conn, "http://nas/dav/kids/x.mp3").as_deref(),
+            Some("Basic Yzpk")
+        );
+        assert_eq!(resolve_auth_header(&conn, "http://open/dav/x.mp3"), None);
+        assert_eq!(resolve_auth_header(&conn, "http://other/x.mp3"), None);
     }
 
     #[test]
@@ -579,5 +1026,112 @@ mod tests {
         );
         assert!(!items[1].is_directory);
         assert_eq!(items[1].content_length, Some(1234567));
+    }
+
+    const AUDIO_FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/");
+
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("{AUDIO_FIXTURES}{name}")).unwrap()
+    }
+
+    /// Parses the first `head_len` bytes the way `probe_song_tags` does, before any tail.
+    fn probe_head(name: &str, head_len: usize) -> (super::Song, bool) {
+        let bytes = fixture(name);
+        let url = format!("https://example.com/{name}");
+        let head = &bytes[..head_len.min(bytes.len())];
+        let song = super::parse_probe_buffer(head, &url, bytes.len() as u64);
+        let resolved = super::head_resolves_song(&song, head);
+        (song, resolved)
+    }
+
+    #[test]
+    fn flac_head_alone_skips_the_tail_even_without_an_album_tag() {
+        let (song, resolved) = probe_head("song_gamma.flac", 50 * 1024);
+        assert!(resolved);
+        assert_eq!(song.length_nanosec, Some(800_000_000));
+        assert_eq!(song.title.as_deref(), Some("Song Gamma"));
+    }
+
+    #[test]
+    fn mp3_with_complete_id3v2_tags_skips_the_tail() {
+        let (song, resolved) = probe_head("song_alpha.mp3", 2718);
+        assert!(resolved);
+        assert_eq!(song.album.as_deref(), Some("Album Gold"));
+    }
+
+    #[test]
+    fn untagged_mp3_keeps_the_tail_for_id3v1() {
+        let (_, resolved) = probe_head("song_short.mp3", 881);
+        assert!(!resolved);
+    }
+
+    #[test]
+    fn formats_that_need_the_file_end_keep_the_tail() {
+        for name in ["song_beta.wav", "song_delta.ogg", "song_epsilon.m4a"] {
+            let (song, resolved) = probe_head(name, 1024);
+            assert!(!resolved, "{name} must fetch the tail");
+            assert!(
+                song.length_nanosec.is_none(),
+                "{name} head parse is partial"
+            );
+        }
+    }
+
+    #[test]
+    fn head_plus_tail_recovers_what_a_head_alone_cannot() {
+        for (name, head_len, duration) in [
+            ("song_delta.ogg", 1024, 500_000_000),
+            ("song_epsilon.m4a", 1024, 2_023_000_000),
+        ] {
+            let bytes = fixture(name);
+            let url = format!("https://example.com/{name}");
+            let mut probe = bytes[..head_len].to_vec();
+            probe.extend_from_slice(&bytes[head_len..]);
+            let song = super::parse_probe_buffer(&probe, &url, bytes.len() as u64);
+            assert_eq!(song.length_nanosec, Some(duration), "{name}");
+            assert!(song.title.is_some(), "{name}");
+        }
+    }
+
+    #[test]
+    fn flac_bitrate_comes_from_the_real_file_size() {
+        let bytes = fixture("song_gamma.flac");
+        let (song, _) = probe_head("song_gamma.flac", 50 * 1024);
+        let audio = bytes.len() - super::flac_audio_start(&bytes);
+        let expected = (audio as f64 * 8.0 / 0.8 / 1000.0).round() as i32;
+        assert_eq!(song.bitrate, Some(expected));
+    }
+
+    #[test]
+    fn flac_bitrate_ignores_embedded_art_bytes() {
+        let bytes = fixture("song_gamma.flac");
+        let (plain, _) = probe_head("song_gamma.flac", 50 * 1024);
+        // The same audio claimed to sit in a file 300 KB larger (art stood in as padding).
+        let url = "https://example.com/song_gamma.flac";
+        let head = &bytes[..50 * 1024];
+        let song = super::parse_probe_buffer(head, url, bytes.len() as u64 + 300_000);
+        let audio_start = super::flac_audio_start(&bytes);
+        assert!(audio_start > 0);
+        let expected = ((bytes.len() - audio_start) as f64 * 8.0 / 0.8 / 1000.0).round() as i32;
+        assert_eq!(plain.bitrate, Some(expected));
+        // With 300 KB extra the figure must rise by exactly those bytes' worth.
+        assert!(song.bitrate.unwrap() > plain.bitrate.unwrap());
+    }
+
+    #[test]
+    fn headerless_mp3_duration_uses_the_real_file_size() {
+        let bytes = fixture("song_alpha.mp3");
+        let (full, _) = probe_head("song_alpha.mp3", bytes.len());
+        let (head, _) = probe_head("song_alpha.mp3", 2718);
+        let (full, head) = (full.length_nanosec.unwrap(), head.length_nanosec.unwrap());
+        // Tolerate lofty's frame-boundary rounding; the truncated head used to be far off.
+        assert!((full - head).abs() < 50_000_000, "full={full} head={head}");
+    }
+
+    #[test]
+    fn title_falls_back_to_the_decoded_file_name() {
+        let mut song = super::Song::default();
+        super::title_from_filename_if_missing(&mut song, "https://h/a%20b/Track%20One.mp3?x=1");
+        assert_eq!(song.title.as_deref(), Some("Track One"));
     }
 }

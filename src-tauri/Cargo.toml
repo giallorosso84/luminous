@@ -37,6 +37,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-autostart = "2"
 # Cross-restart window geometry persistence (Windows/macOS/X11-Linux — see
 # geometry_capture_supported() in commands/window.rs for why this can't help
@@ -118,7 +119,9 @@ percent-encoding = "2"
 # --- Data-parallel tag reading during library scan ---
 rayon = "1"
 md-5 = "0.11"
-sha2 = "0.10"
+sha2 = "0.11"
+ed25519-dalek = "3"
+chacha20poly1305 = "0.11"
 
 [features]
 # Enables `tokio-console` task/scheduler introspection — see
@@ -135,6 +138,7 @@ tokio-console = ["dep:console-subscriber"]
 tauri-plugin-prevent-default = { version = "6", features = ["platform-windows"] }
 # Polls the live Shift-key state at drag-and-drop time via GetAsyncKeyState.
 windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows-collections = "0.3"
 # --- OS "Now Playing" integration: SMTC (#576) ---
 # Registers our window with System Media Transport Controls via
 # `ISystemMediaTransportControlsInterop::GetForWindow` (Win32_System_WinRT),
@@ -143,11 +147,16 @@ windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"]
 windows = { version = "0.62", features = [
     "Media_Control",
     "Foundation",
+    # --- Microsoft Store entitlement for add-on themes (#1414) ---
+    "Services_Store",
+    "Foundation_Collections",
     "Storage_Streams",
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_WinRT",
     "Win32_System_Recovery",
+    # --- Add-on key cache protected with the signed-in user's credentials (DPAPI, #1429) ---
+    "Win32_Security_Cryptography",
     # --- Default Apps deep link: RegisteredApplications lookup (#1265) ---
     "Win32_System_Registry",
     "Win32_Storage_Packaging_Appx",

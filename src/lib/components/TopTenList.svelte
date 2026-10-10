@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { StatsTopItem, Song, AlbumItem } from "../types";
+  import { statsBarPercents } from "../utils/statsBars";
   import { playerStore } from "../stores/player.svelte";
   import { navigationStore } from "../stores/navigation.svelte";
   import { collectionStore } from "../stores/collection.svelte";
@@ -33,6 +34,8 @@
     secondaryFallback?: string;
     /** Hides the plays/minutes trailing column, for compact contexts (e.g. Home). */
     showDuration?: boolean;
+    /** Whether to show proportional accent colour bars behind ranked items (#1475). */
+    showAccentBars?: boolean;
     /** When provided, the title becomes a clickable button that navigates to
      * the full expanded view. */
     onHeaderClick?: () => void;
@@ -42,7 +45,24 @@
     onShareClick?: () => void;
   }
 
-  let { title, items, kind, emptyText, secondaryFallback, showDuration = true, onHeaderClick, onShareClick }: Props = $props();
+  let {
+    title,
+    items,
+    kind,
+    emptyText,
+    secondaryFallback,
+    showDuration = true,
+    showAccentBars = false,
+    onHeaderClick,
+    onShareClick,
+  }: Props = $props();
+
+  // Relative scaling for proportional accent bars (#1475)
+  const barPercents = $derived(statsBarPercents(items));
+
+  function getItemPercent(item: StatsTopItem): number {
+    return showAccentBars ? (barPercents[items.indexOf(item)] ?? 0) : 0;
+  }
 
   let contextMenuState = $state<{ x: number; y: number; song: Song } | null>(null);
 
@@ -167,9 +187,7 @@
       steady: i18n.t("home.chartSteady", {}, "Steady"),
     };
     const weeks = item.weeks_on_chart ?? 1;
-    const weeksLabel = weeks === 1
-      ? i18n.t("home.chartWeek", {}, "1 week")
-      : i18n.t("home.chartWeeksCount", { weeks }, `${weeks} weeks`);
+    const weeksLabel = i18n.plural("home.chartWeeksCount", weeks);
     return `${movementLabels[item.movement ?? "steady"]} · ${weeksLabel}`;
   }
 </script>
@@ -207,9 +225,7 @@
   <div class="shrink-0 flex flex-col items-end justify-center text-right">
     <span
       class="text-xs font-medium text-brand-text-secondary tabular-nums"
-      title={item.play_count === 1
-        ? i18n.t("stats.playsCountOne", {}, "1 play")
-        : i18n.t("stats.playsCount", { count: item.play_count }, `${item.play_count} plays`)}
+      title={i18n.plural("stats.playsCount", item.play_count)}
     >
       {item.minutes === 0 && item.play_count > 0
         ? i18n.t("stats.minuteUnderOne", {}, "< 1 min")
@@ -248,6 +264,7 @@
 
   <div class="flex-1 flex flex-col gap-2">
     {#each items as item, i (item.key)}
+      {@const itemPercent = getItemPercent(item)}
       <div class="flex items-center gap-3">
         {#if item.movement}
           {@render movementSnippet(item)}
@@ -271,6 +288,7 @@
             }}
             <AlbumRowCard
               album={albumItem}
+              progressPercent={showAccentBars ? itemPercent : undefined}
               onclick={() => openItem(item)}
               onRate={(r) => { item.rating = r; }}
             />
@@ -287,6 +305,7 @@
               {artist}
               {artistAlbums}
               {artistSongs}
+              progressPercent={showAccentBars ? itemPercent : undefined}
               onclick={() => openItem(item)}
             />
           {:else if kind === "song"}
@@ -304,9 +323,17 @@
                   openItem(item);
                 }
               }}
-              class="group flex items-center gap-3 px-3 py-2.5 rounded-lg bg-brand-sidebar border border-brand-border/60 outline-2 -outline-offset-2 outline-transparent hover:outline-brand-accent transition-[outline-color,border-color] duration-200 select-none cursor-pointer w-full"
+              class="group flex items-center gap-3 px-3 py-2.5 rounded-lg bg-brand-sidebar border border-brand-border/60 outline-2 -outline-offset-2 outline-transparent hover:outline-brand-accent transition-[outline-color,border-color] duration-200 select-none cursor-pointer w-full relative overflow-hidden"
             >
-              <div class="relative shrink-0 overflow-hidden">
+              {#if showAccentBars && itemPercent > 0}
+                <div
+                  class="accent-bar absolute inset-y-0 left-0 rounded-lg bg-brand-accent/15 pointer-events-none transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  style="width: {itemPercent}%;"
+                  data-testid="stats-accent-bar"
+                ></div>
+              {/if}
+
+              <div class="relative z-10 shrink-0 overflow-hidden">
                 <CoverArt
                   songId={item.song_id ?? undefined}
                   artEmbedded={item.art_embedded}
@@ -319,7 +346,7 @@
                 {/if}
               </div>
 
-              <div class="min-w-0 flex-1 flex flex-col gap-0.5">
+              <div class="relative z-10 min-w-0 flex-1 flex flex-col gap-0.5">
                 <div class="flex items-center justify-between gap-2">
                   <p class="truncate text-sm font-semibold text-brand-text-primary min-w-0">{item.label}</p>
                   {#if item.year}
@@ -355,9 +382,17 @@
                   openItem(item);
                 }
               }}
-              class="group flex items-center min-h-[66px] px-3 py-2.5 rounded-lg bg-brand-sidebar border border-brand-border/60 outline-2 -outline-offset-2 outline-transparent hover:outline-brand-accent transition-[outline-color,border-color] duration-200 select-none cursor-pointer w-full"
+              class="group flex items-center min-h-[66px] px-3 py-2.5 rounded-lg bg-brand-sidebar border border-brand-border/60 outline-2 -outline-offset-2 outline-transparent hover:outline-brand-accent transition-[outline-color,border-color] duration-200 select-none cursor-pointer w-full relative overflow-hidden"
             >
-              <div class="min-w-0 flex-1 flex flex-col gap-0.5">
+              {#if showAccentBars && itemPercent > 0}
+                <div
+                  class="accent-bar absolute inset-y-0 left-0 rounded-lg bg-brand-accent/15 pointer-events-none transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  style="width: {itemPercent}%;"
+                  data-testid="stats-accent-bar"
+                ></div>
+              {/if}
+
+              <div class="relative z-10 min-w-0 flex-1 flex flex-col gap-0.5">
                 <p class="truncate text-sm font-semibold text-brand-text-primary min-w-0">{item.label}</p>
                 {#if item.secondary || secondaryFallback}
                   <p class="truncate text-xs text-brand-text-secondary font-medium min-w-0">{item.secondary || secondaryFallback}</p>

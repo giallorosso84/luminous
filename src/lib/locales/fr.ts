@@ -26,9 +26,14 @@ export const fr: DeepStringRecord<typeof en> = {
     scanningPhaseTooltip: "Phase d'analyse : {phase} ({scanned}/{total})",
     scanningPhaseLabel: "Phase : {phase}",
     musicbrainzLogin: "Connexion à MusicBrainz",
-    musicbrainzProfile: "Profil MusicBrainz"
+    musicbrainzProfile: "Profil MusicBrainz",
+    pinned: "Épinglés"
   },
   topNav: {
+    filterExample: "p. ex. rating:>=4 year:<2000 genre:jazz \"miles davis\"",
+    fileFilterSupported: "Fichiers pris en charge",
+    fileFilterAudio: "Fichiers audio",
+    fileFilterPlaylists: "Listes de lecture",
     goBack: "Retour",
     goForward: "Avancer",
     searchPlaceholder: "Rechercher et filtrer... (Ctrl+L)",
@@ -36,7 +41,10 @@ export const fr: DeepStringRecord<typeof en> = {
     openFilesTooltip: "Ouvrir des fichiers audio ou listes de lecture (*.m3u)",
     openFilesTitle: "Ouvrir des fichiers audio ou des listes de lecture",
     searching: "Recherche...",
-    tracksCount: "{count} chansons",
+    tracksCount: {
+      one: "{count} chanson",
+      other: "{count} chansons"
+    },
     clearSearch: "Effacer la recherche",
     recentSearches: "Recherches récentes",
     clearRecentSearches: "Effacer les recherches récentes",
@@ -72,8 +80,10 @@ export const fr: DeepStringRecord<typeof en> = {
     chartFalling: "En baisse",
     chartSteady: "Stable",
     chartPeak: "Sommet n°{peak}",
-    chartWeek: "1 semaine",
-    chartWeeksCount: "{weeks} semaines",
+    chartWeeksCount: {
+      one: "{count} semaine",
+      other: "{count} semaines"
+    },
     recentlyAdded: "Ajoutés récemment",
     pinned: "Épinglé",
     exploreLibrary: "Explorez votre bibliothèque",
@@ -102,15 +112,24 @@ export const fr: DeepStringRecord<typeof en> = {
     text: "Cette bibliothèque a été ouverte pour la dernière fois par une version plus récente de Luminous (base de données v{dbVersion}, cette application prend en charge la v{appVersion}). Vos dossiers et vos morceaux sont toujours là — mettez à jour Luminous pour les retrouver."
   },
   collection: {
+    columnSelectorVisible: "Visibles",
+    columnSelectorNoneVisible: "Aucune colonne visible",
+    columnSelectorMetatags: "Métabalises",
     artists: "Artistes ({count})",
     albums: "Albums ({count})",
     songs: "Chansons ({count})",
-    showingSongs: "Affichage de {count} chansons",
-    showingOneSong: "Affichage de 1 chanson",
-    showingAlbums: "Affichage de {count} albums",
-    showingOneAlbum: "Affichage de 1 album",
-    showingArtists: "Affichage de {count} artistes",
-    showingOneArtist: "Affichage de 1 artiste",
+    showingSongs: {
+      one: "Affichage de {count} chanson",
+      other: "Affichage de {count} chansons"
+    },
+    showingAlbums: {
+      one: "Affichage de {count} album",
+      other: "Affichage de {count} albums"
+    },
+    showingArtists: {
+      one: "Affichage de {count} artiste",
+      other: "Affichage de {count} artistes"
+    },
     noSongsTitle: "Aucune chanson trouvée",
     noSongsSearchEmpty: "Nous n'avons trouvé aucune chanson correspondant à « {query} ». Essayez d'ajuster vos mots-clés.",
     clearSearchFilter: "Effacer le filtre de recherche",
@@ -159,8 +178,10 @@ export const fr: DeepStringRecord<typeof en> = {
     sortAlbumsAsc: "Trier : Albums (Moins grand nombre)",
     sortGenreAsc: "Trier : Genre (A-Z)",
     sortGenreDesc: "Trier : Genre (Z-A)",
-    albumsCount: "{count} albums",
-    oneAlbum: "1 album",
+    albumsCount: {
+      one: "{count} album",
+      other: "{count} albums"
+    },
     selectPlaylistFirstAlert: "Veuillez sélectionner ou créer une liste de lecture d'abord depuis l'onglet Listes de lecture.",
     albumPlaylistName: "Album : {name}",
     columnsMenuTooltip: "Colonnes visibles personnalisées",
@@ -222,8 +243,23 @@ export const fr: DeepStringRecord<typeof en> = {
     resetSearchFilters: "Réinitialiser la recherche et les filtres"
   },
   settings: {
+    textFilesFilter: "Texte",
+    showToken: "Afficher le jeton",
+    hideToken: "Masquer le jeton",
+    showKey: "Afficher la clé",
+    hideKey: "Masquer la clé",
+    aboutLogoAlt: "Logo de Luminous",
+    picardExecutableFilter: "Exécutable Picard",
+    fanartValidateFailed: "Échec de la validation de la clé d'API",
+    updateServerNoResponse: "Aucune réponse du serveur de mise à jour",
+    updateDownloadFailed: "Échec du téléchargement",
+    updateRestartFailed: "Échec du redémarrage pour la mise à jour",
+    musicbrainzLoginFailed: "Échec du démarrage de la connexion à MusicBrainz",
+    musicbrainzVerifyFailed: "Échec de la vérification du code d'autorisation",
+    musicbrainzStatsFailed: "Échec du chargement des statistiques MusicBrainz",
     title: "Paramètres",
     tabGeneral: "Général",
+    tabSystem: "Système",
     tabSources: "Sources",
     tabIntegrations: "Intégrations",
     watchedFoldersTitle: "Dossiers surveillés",
@@ -264,8 +300,9 @@ export const fr: DeepStringRecord<typeof en> = {
     generalTitle: "Paramètres généraux",
     generalSubtitle: "Configurer la langue de l'application et les préférences de format.",
     selectLanguage: "Langue / Language",
-    languageEnglish: "English",
-    languageFrench: "Français",
+    systemTitle: "Système",
+    systemSubtitle: "Gérer le démarrage et la réduction de Luminous, et l'emplacement de ses données.",
+    uiLanguageHint: "Choisissez la langue des menus, des boutons et des messages.",
     ratingStyle: "Style de notation des morceaux",
     ratingStyleHeart: "Cœur (favori)",
     ratingStyleStars: "5 étoiles",
@@ -320,6 +357,7 @@ export const fr: DeepStringRecord<typeof en> = {
     formatSnap: "Paquet Snap",
     formatSystemPkg: "Paquet système",
     updateChecksDisabledTitle: "Les vérifications automatiques sont désactivées",
+    updateChecksOfflineTitle: "Les vérifications de mise à jour sont suspendues hors ligne",
     updateCheckingTitle: "Vérification des mises à jour…",
     updateBuildLabel: "compilation {hash}",
     updateLastChecked: "vérifié {time}",
@@ -352,7 +390,10 @@ export const fr: DeepStringRecord<typeof en> = {
     folderChangeLocation: "Changer d'emplacement…",
     folderLocateHint: "Indiquez le nouvel emplacement de ce dossier si sa lettre d'unité a changé ou si vous avez déplacé la musique. Les morceaux conservent leurs écoutes, leurs notes et leurs listes de lecture.",
     folderLocateDialogTitle: "Sélectionnez le nouvel emplacement du dossier",
-    folderLocateSuccess: "{count} morceaux reliés à {path}",
+    folderLocateSuccess: {
+      one: "{count} morceau relié à {path}",
+      other: "{count} morceaux reliés à {path}"
+    },
     folderLocateFailedPrefix: "Impossible de relier le dossier : ",
     editFolderTitle: "Modifier les détails du dossier",
     folderSaveFailedPrefix: "Impossible d'enregistrer les détails du dossier : ",
@@ -382,12 +423,36 @@ export const fr: DeepStringRecord<typeof en> = {
     badgeColorEmerald: "Émeraude",
     badgeColorCyan: "Cyan",
     badgeColorIndigo: "Indigo",
-    loudnessAnalysisActive: "La normalisation du volume analyse {remaining} chanson(s) en arrière-plan — cela peut ressembler à une analyse même lorsque la surveillance des dossiers est désactivée. Désactivez-la dans l'onglet Égaliseur pour l'arrêter.",
+    loudnessAnalysisActive: {
+      one: "La normalisation du volume analyse {count} chanson en arrière-plan — cela peut ressembler à une analyse même lorsque la surveillance des dossiers est désactivée. Désactivez-la dans l'onglet Égaliseur pour l'arrêter.",
+      other: "La normalisation du volume analyse {count} chansons en arrière-plan — cela peut ressembler à une analyse même lorsque la surveillance des dossiers est désactivée. Désactivez-la dans l'onglet Égaliseur pour l'arrêter."
+    },
     noFoldersTitle: "Aucun dossier surveillé",
     noFoldersText: "Cliquez sur « Ajouter un dossier » ci-dessus pour ajouter votre répertoire musical.",
     dynamicThemes: "Thèmes dynamiques",
     predefinedThemes: "Thèmes prédéfinis",
     customThemes: "Thèmes personnalisés",
+    themesSubtitle: "Personnalisez l'apparence et les couleurs de Luminous.",
+    addonThemes: "Thèmes additionnels de soutien",
+    addonBadge: "Additionnel",
+    addonCheckPurchases: "Vérifier les achats",
+    addonGet: "Obtenir",
+    addonBuyFor: "Acheter pour {price}",
+    addonBuyForFree: "Obtenir gratuitement",
+    addonWaitingStore: "En attente du Microsoft Store…",
+    addonDownloading: "Téléchargement…",
+    addonOwned: "Obtenu",
+    addonTryAgain: "Réessayer",
+    addonDescriptionMothman: "Un minuscule cryptide danse en haut de la barre de lecture.",
+    addonError_offline: "Impossible de joindre le serveur des thèmes additionnels. Vérifiez votre connexion, puis réessayez.",
+    addonError_not_entitled: "Le Microsoft Store n'a pas pu confirmer votre achat. Vérifiez les achats, puis réessayez.",
+    addonError_store: "Le Microsoft Store ne répond pas. Réessayez dans un instant.",
+    addonError_upstream: "Le service de thèmes additionnels éprouve des difficultés. Réessayez plus tard.",
+    addonError_rate_limited: "Trop de tentatives. Attendez une minute, puis réessayez.",
+    addonError_bundle: "La vérification du téléchargement a échoué. Réessayez, ou communiquez avec l'assistance si le problème persiste.",
+    addonError_unsupported_api: "Ce thème nécessite une version plus récente de Luminous. Mettez à jour pour l'utiliser.",
+    addonError_reconfirm: "Connectez-vous à Internet une fois pour reconfirmer votre achat.",
+    addonError_internal: "Une erreur s'est produite. Réessayez.",
     luminousFootnote: "Les couleurs s'adaptent à la pochette d'album en cours d'écoute",
     systemFootnote: "Bascule entre mode clair et sombre selon votre système",
     selectColorScheme: "Sélectionner le thème",
@@ -454,11 +519,15 @@ export const fr: DeepStringRecord<typeof en> = {
     rescanTitle: "Analyse & maintenance de la bibliothèque",
     rescanSubtitle: "Effectuez des rebalayages incrémentiels ou complets et configurez l'analyse automatique.",
     lastScanned: "Dernière analyse : {time}",
-    importFinishedToastOne: "1 chanson ajoutée",
-    importFinishedToastMany: "{count} chansons ajoutées",
+    importFinishedToast: {
+      one: "{count} chanson ajoutée",
+      other: "{count} chansons ajoutées"
+    },
     batchProcessingToast: "Traitement des chansons ({current}/{total})...",
-    batchProcessingDoneToastOne: "1 chanson mise à jour",
-    batchProcessingDoneToastMany: "{count} chansons mises à jour",
+    batchProcessingDoneToast: {
+      one: "{count} chanson mise à jour",
+      other: "{count} chansons mises à jour"
+    },
     scanningPhase: "Phase : {phase}",
     phaseDiscovering: "Découverte des fichiers",
     phaseReadingTags: "Lecture des étiquettes",
@@ -472,10 +541,10 @@ export const fr: DeepStringRecord<typeof en> = {
     forceFullScanHint: "Relisez les métadonnées et pochette de tous les fichiers audio sans tenir compte des dates de modification",
     pruneMissingBtn: "Nettoyer",
     pruneMissingHint: "Supprimez les chansons manquantes, les dossiers vides et les doublons",
-    contextEnrichmentIntegrationTitle: "Sources de données en ligne",
-    contextEnrichmentDesc: "Utilisé pour le panneau d'informations et les détails d'artiste.",
-    contextEnrichmentLabel: "Récupérer les données de contexte et de biographie",
-    contextEnrichmentHint: "Recherche les notes, étiquettes, critiques et biographies d'artistes sur MusicBrainz, CritiqueBrainz et Wikipédia. Désactivez cette option pour garder Luminous entièrement hors ligne pour ces données.",
+    contextEnrichmentIntegrationTitle: "Services en ligne",
+    contextEnrichmentDesc: "Désactivez pour mettre Luminous entièrement hors ligne : aucune requête vers des services externes pour les pochettes, les paroles, les biographies, les scrobbles ou les mises à jour. Les bibliothèques Subsonic et WebDAV continuent de fonctionner.",
+    onlineLabel: "En ligne",
+    offlineLabel: "Hors ligne",
     fanartIntegration: "Intégration fanart.tv",
     fanartDesc1: "Luminous utilise ",
     fanartDesc2: " pour récupérer des photos d'artistes, des logos de groupes, des fonds d'en-tête, des pochettes d'album et des visuels de disque lorsqu'aucun n'est trouvé localement. Sans clé API, Luminous se rabat sur l'image Wikidata de l'artiste pour la photo, si elle existe.",
@@ -496,10 +565,10 @@ export const fr: DeepStringRecord<typeof en> = {
     fanartFetchAlbumCoverHint: "Récupérer une pochette pour les albums qui n'en ont pas",
     fanartFetchDiscArt: "Visuel du disque",
     fanartFetchDiscArtHint: "Récupérer le visuel du disque pour l'ajouter aux illustrations de l'album",
-    pruneCompleteMsg: "{count} chanson(s) manquante(s) nettoyée(s)",
-    pruneCompleteMsgWithFolders: "{count} chanson(s) manquante(s) nettoyée(s), {folders} dossier(s) vide(s) supprimé(s)",
-    pruneCompleteMsgWithDuplicates: "{count} chanson(s) manquante(s) nettoyée(s), {duplicates} doublon(s) fusionné(s)",
-    pruneCompleteMsgWithFoldersAndDuplicates: "{count} chanson(s) manquante(s) nettoyée(s), {folders} dossier(s) vide(s) supprimé(s), {duplicates} doublon(s) fusionné(s)",
+    pruneCompleteMsg: "Chansons manquantes nettoyées : {count}",
+    pruneCompleteMsgWithFolders: "Chansons manquantes nettoyées : {count}; dossiers vides supprimés : {folders}",
+    pruneCompleteMsgWithDuplicates: "Chansons manquantes nettoyées : {count}; doublons fusionnés : {duplicates}",
+    pruneCompleteMsgWithFoldersAndDuplicates: "Chansons manquantes nettoyées : {count}; dossiers vides supprimés : {folders}; doublons fusionnés : {duplicates}",
     watchRealtimeLabel: "Surveillance en temps réel des dossiers",
     watchRealtimeHint: "Surveillez automatiquement les dossiers de musique configurés pour détecter ajouts, modifications ou suppressions.",
     defaultLibraryLabel: "Bibliothèque par défaut",
@@ -510,13 +579,18 @@ export const fr: DeepStringRecord<typeof en> = {
     defaultLibraryChangeFailed: "Impossible de modifier la bibliothèque par défaut.",
     scanOnStartupLabel: "Analyser la bibliothèque au démarrage",
     scanOnStartupHint: "Exécutez automatiquement une réanalyse incrémentielle au lancement de Luminous.",
+    autoOrganizeLabel: "Auto-organisation des nouveaux fichiers et étiquettes",
+    autoOrganizeHint: "Organisez automatiquement les fichiers en arrière-plan selon votre modèle actif lors de l'arrivée de nouvelles pistes ou de l'enregistrement d'étiquettes.",
     saveArtworkToFoldersLabel: "Enregistrer les illustrations dans les dossiers de musique",
     saveArtworkToFoldersHint: "Enregistrez les pochettes, photos d'artistes, logos et bannières directement dans vos dossiers de musique sous forme de fichiers cover.jpg, artist.jpg, logo.png et banner.jpg.",
     saveArtworkToFoldersModalTitle: "Exporter les pochettes dans les dossiers musicaux",
     saveArtworkToFoldersModalMessage: "L'activation de cette option exportera les pochettes d'albums (cover.jpg), photos d'artistes (artist.jpg), logos de groupes (logo.png) et bannières (banner.jpg) en cache directement dans vos dossiers de musique locaux. Les dossiers partagés et les illustrations existantes ne seront pas écrasés. Voulez-vous continuer?",
     saveArtworkToFoldersModalConfirm: "Exporter les pochettes",
     saveArtworkToFoldersModalCancel: "Annuler",
-    artworkSweepSuccess: "{count} fichiers d'illustrations ont été exportés dans vos dossiers de musique.",
+    artworkSweepSuccess: {
+      one: "{count} fichier d'illustrations a été exporté dans vos dossiers de musique.",
+      other: "{count} fichiers d'illustrations ont été exportés dans vos dossiers de musique."
+    },
     artworkSweepNone: "Aucune illustration en cache n'avait besoin d'être exportée dans les dossiers.",
     statsSongs: "Chansons",
     statsAlbums: "Albums",
@@ -525,6 +599,7 @@ export const fr: DeepStringRecord<typeof en> = {
     statsSizeMusic: "Fichiers audio : {size}",
     statsSizeAlbumArt: "Pochettes d'album : {size}",
     statsSizeArtistArt: "Images d'artistes : {size}",
+    statsSizeThumbnails: "Miniatures des images de dossier : {size}",
     invalidThemeFile: "Format de fichier de thème invalide",
     importThemeFailed: "Échec de l'importation du thème. Veuillez vérifier le format du fichier.",
     importedThemeDefaultName: "Thème importé",
@@ -560,6 +635,8 @@ export const fr: DeepStringRecord<typeof en> = {
     webdavSyncBtn: "Synchroniser",
     webdavSyncing: "Synchronisation...",
     webdavSyncComplete: "Synchronisation terminée : {added} ajoutés, {updated} mis à jour, {errors} erreurs.",
+    webdavSyncErrorsHint: "Consultez Exporter les diagnostics dans les paramètres pour connaître les fichiers en échec.",
+    syncAlreadyRunning: "{name} est déjà en cours de synchronisation. Attendez la fin.",
     webdavNoServersTitle: "Aucun serveur WebDAV configuré",
     webdavNoServersText: "Ajoutez un serveur WebDAV ci-dessus pour lire de la musique à distance sans monter de disque.",
     confirmRemoveWebdavServer: "Supprimer le serveur WebDAV « {name} » et tous les éléments associés en cache?",
@@ -598,16 +675,21 @@ export const fr: DeepStringRecord<typeof en> = {
     subsonicNoServersTitle: "Aucun serveur multimédia connecté",
     subsonicNoServersText: "Ajoutez un serveur Navidrome ou OpenSubsonic ci-dessus pour diffuser sa bibliothèque.",
     confirmRemoveSubsonicServer: "Retirer le serveur multimédia « {name} »? Ses morceaux restent dans votre bibliothèque, marqués comme indisponibles.",
-    removeSubsonicServer: "Retirer le serveur multimédia"
+    removeSubsonicServer: "Retirer le serveur multimédia",
+    saving: "Enregistrement en cours...",
+    watchedFoldersSubtitle: "Gérez les dossiers à analyser pour trouver des fichiers de musique."
   },
   playlists: {
+    queuePlaylistDefaultName: "Liste de lecture de la file",
     title: "Listes de lecture",
     untitledPlaylistName: "Liste sans titre",
     reservedPlaylistName: "« {name} » est réservé à la file d'attente intégrée. Veuillez choisir un autre nom.",
     noPlaylistsTitle: "Aucune liste de lecture",
     noPlaylistsText: "Cliquez sur « Nouvelle liste » ci-dessus pour créer la première.",
-    showingOnePlaylist: "Affichage de 1 liste de lecture",
-    showingPlaylists: "Affichage de {count} listes de lecture",
+    showingPlaylists: {
+      one: "Affichage de {count} liste de lecture",
+      other: "Affichage de {count} listes de lecture"
+    },
     newPlaylistBtn: "Nouvelle liste",
     newSmartPlaylistBtn: "Nouvelle liste intelligente",
     sortNameAsc: "Trier : Nom (A-Z)",
@@ -645,8 +727,10 @@ export const fr: DeepStringRecord<typeof en> = {
     cancel: "Annuler",
     playTrack: "Lire la chanson",
     removeFromPlaylist: "Retirer de la liste de lecture",
-    songsCount: "{count} chansons",
-    oneSong: "1 chanson",
+    songsCount: {
+      one: "{count} chanson",
+      other: "{count} chansons"
+    },
     unknownGenre: "Genre inconnu",
     mixedGenre: "Mixte",
     statsLine: "{genre} · {songs} • {duration} au total",
@@ -656,7 +740,10 @@ export const fr: DeepStringRecord<typeof en> = {
     redoTooltip: "Rétablir la dernière opération",
     redoBtn: "Rétablir",
     moreActionsTooltip: "Plus d'actions",
-    removeUnavailableTooltip: "Retirer les {count} chansons indisponibles de la liste",
+    removeUnavailableTooltip: {
+      one: "Retirer {count} chanson indisponible de la liste",
+      other: "Retirer les {count} chansons indisponibles de la liste"
+    },
     removeUnavailableBtn: "Retirer {count} indisponibles",
     fileNotFoundTooltip: "Fichier introuvable sur le disque",
     fileNotFoundText: "Introuvable",
@@ -672,8 +759,14 @@ export const fr: DeepStringRecord<typeof en> = {
     cancelBtn: "Annuler",
     filterPlaceholder: "Filtrer les chansons...",
     clearFilter: "Effacer le filtre",
-    removeDuplicatesTooltip: "Retirer les {count} chansons en double de la liste",
-    removeDuplicatesBtn: "Retirer {count} doublons",
+    removeDuplicatesTooltip: {
+      one: "Retirer {count} chanson en double de la liste",
+      other: "Retirer les {count} chansons en double de la liste"
+    },
+    removeDuplicatesBtn: {
+      one: "Retirer {count} doublon",
+      other: "Retirer {count} doublons"
+    },
     duplicateTrackFlag: "Chanson en double",
     selectedCount: "{count} sélectionnée(s)",
     populationModeLabel: "Lecture depuis",
@@ -700,6 +793,10 @@ export const fr: DeepStringRecord<typeof en> = {
     missingMetadataAutoPlaylist: "Métadonnées manquantes",
     missingMusicBrainzAutoPlaylist: "Liste auto",
     daypartAutoPlaylist: "Mix du moment",
+    daypartMorning: "Mix du matin",
+    daypartAfternoon: "Mix de l'après-midi",
+    daypartEvening: "Mix du soir",
+    daypartLateNight: "Mix de fin de nuit",
     bpmDownTempo: "Tempo lent BPM",
     bpmMidTempo: "Tempo moyen BPM",
     bpmUptempo: "Tempo enlevé BPM",
@@ -707,24 +804,38 @@ export const fr: DeepStringRecord<typeof en> = {
     bpmExtreme: "Extrême BPM",
     smartAutoPlaylist: "Intelligente",
     playlistTypeLabel: "Liste de lecture",
+    autoPlaylistLabel: "Liste auto",
     favouritesAutoPlaylist: "Liste auto",
     recentlyAddedAutoPlaylist: "Liste auto",
     mostPlayedAutoPlaylist: "Liste auto",
     historyAutoPlaylist: "Liste auto",
     relativeJustNow: "À l'instant",
-    relativeOneMinuteAgo: "Il y a 1 minute",
-    relativeMinutesAgo: "Il y a {count} minutes",
-    relativeOneHourAgo: "Il y a 1 heure",
-    relativeHoursAgo: "Il y a {count} heures",
+    relativeMinutesAgo: {
+      one: "Il y a {count} minute",
+      other: "Il y a {count} minutes"
+    },
+    relativeHoursAgo: {
+      one: "Il y a {count} heure",
+      other: "Il y a {count} heures"
+    },
     relativeToday: "Aujourd'hui",
     relativeYesterday: "Hier",
-    relativeDaysAgo: "Il y a {count} jours",
-    relativeOneWeekAgo: "Il y a 1 semaine",
-    relativeWeeksAgo: "Il y a {count} semaines",
-    relativeOneMonthAgo: "Il y a 1 mois",
-    relativeMonthsAgo: "Il y a {count} mois",
-    relativeOneYearAgo: "Il y a 1 an",
-    relativeYearsAgo: "Il y a {count} ans",
+    relativeDaysAgo: {
+      one: "Il y a {count} jour",
+      other: "Il y a {count} jours"
+    },
+    relativeWeeksAgo: {
+      one: "Il y a {count} semaine",
+      other: "Il y a {count} semaines"
+    },
+    relativeMonthsAgo: {
+      one: "Il y a {count} mois",
+      other: "Il y a {count} mois"
+    },
+    relativeYearsAgo: {
+      one: "Il y a {count} an",
+      other: "Il y a {count} ans"
+    },
     makeActiveBtn: "Définir comme active",
     activeBadgeLabel: "Active",
     refreshPlaylistBtn: "Actualiser la liste de lecture",
@@ -767,7 +878,10 @@ export const fr: DeepStringRecord<typeof en> = {
     smartRulePlaylistLabel: "Liste intelligente",
     smartRuleBasedTooltip: "Liste intelligente basée sur des règles",
     smartBadgeLabel: "Intelligente",
-    saveRenameTooltip: "Enregistrer"
+    saveRenameTooltip: "Enregistrer",
+    historyCleared: "Historique de lecture effacé",
+    saveQueueNameLabel: "Nom de la liste de lecture",
+    saveQueueNamePlaceholder: "Ma liste de lecture"
   },
   lyrics: {
     title: "Paroles",
@@ -801,6 +915,7 @@ export const fr: DeepStringRecord<typeof en> = {
     editorPlaceholder: "Coller les paroles au format LRC synchronisé ou texte brut ici...",
     saveFailedPrefix: "Échec de l'enregistrement des paroles : ",
     noOnlineResults: "Aucune parole trouvée auprès des fournisseurs en ligne.",
+    offlineNoLyrics: "Aucune parole enregistrée pour cette piste. Activez « En ligne » dans Paramètres › Intégrations pour les rechercher.",
     insufficientMetadata: "Informations insuffisantes (artiste/titre) pour rechercher des paroles en ligne."
   },
   stats: {
@@ -821,12 +936,16 @@ export const fr: DeepStringRecord<typeof en> = {
     loading: "Chargement des statistiques...",
     empty: "Aucun historique d'écoute pour cette période pour le moment.",
     noData: "Aucune donnée pour cette période.",
-    totalMinutesOne: "1 minute écoutée",
-    totalMinutes: "{count} minutes écoutées",
+    totalMinutes: {
+      one: "{count} minute écoutée",
+      other: "{count} minutes écoutées"
+    },
     minuteCount: "{count} min",
     minuteUnderOne: "< 1 min",
-    playsCount: "{count} écoutes",
-    playsCountOne: "1 écoute",
+    playsCount: {
+      one: "{count} écoute",
+      other: "{count} écoutes"
+    },
     excludeFromStats: "Ne pas inclure dans les statistiques",
     includeInStats: "Inclure dans les statistiques",
     excludedToast: "{name} exclu des statistiques",
@@ -834,14 +953,21 @@ export const fr: DeepStringRecord<typeof en> = {
     heatmapTitle: "Série d'écoute",
     heatmapCurrentStreak: "Série en cours",
     heatmapLongestStreak: "Plus longue série",
-    heatmapStreakOneDay: "1 jour",
-    heatmapStreakDays: "{count} jours",
+    heatmapStreakDays: {
+      one: "{count} jour",
+      other: "{count} jours"
+    },
     heatmapStatus: "{date} — {minutes} min",
     heatmapLegendLess: "Moins",
     heatmapLegendMore: "Plus"
   },
   help: {
     loading: "Chargement du guide d'utilisation..."
+  },
+  tray: {
+    playPause: "Lecture/Pause",
+    showHideWindow: "Afficher/masquer Luminous",
+    quit: "Quitter"
   },
   playerBar: {
     previous: "Chanson précédente",
@@ -898,7 +1024,10 @@ export const fr: DeepStringRecord<typeof en> = {
     channelsStereo: "Stéréo",
     channels51: "Surround 5.1",
     channels71: "Surround 7.1",
-    channelsCount: "{count} canaux",
+    channelsCount: {
+      one: "{count} canal",
+      other: "{count} canaux"
+    },
     releasedLabel: "Sortie",
     genreLabel: "Genre",
     composerLabel: "Compositeur",
@@ -936,10 +1065,12 @@ export const fr: DeepStringRecord<typeof en> = {
     wikipediaSectionLabel: "Wikipédia",
     mbTagsSectionLabel: "Étiquettes de la communauté",
     mbRatingLabel: "Note de la communauté",
-    mbRatingVotes: "({count} votes)",
+    mbRatingVotes: {
+      one: "({count} vote)",
+      other: "({count} votes)"
+    },
     critiquebrainzSectionLabel: "CritiqueBrainz",
     critiquebrainzRatingLabel: "Note de la communauté",
-    critiquebrainzReviewsLabel: "Critique",
     listenbrainzSectionLabel: "ListenBrainz",
     listenbrainzArtistLabel: "Artiste",
     listenbrainzAlbumArtistLabel: "Artiste de l'album",
@@ -951,11 +1082,17 @@ export const fr: DeepStringRecord<typeof en> = {
     contextRetry: "Réessayer",
     contextLoading: "Récupération du contexte…",
     contextFetchError: "Impossible de récupérer les données de contexte. Vérifiez votre connexion et réessayez.",
+    contextOffline: "Hors ligne. Activez « En ligne » dans Paramètres › Intégrations pour récupérer les biographies et le contexte.",
     trackSkippedToast: 'Impossible de lire « {title} » — fichier introuvable. Morceau ignoré.',
-    tracksSkippedToast: "{count} morceaux indisponibles ignorés.",
+    tracksSkippedToast: {
+      one: "{count} morceau indisponible ignoré.",
+      other: "{count} morceaux indisponibles ignorés."
+    },
     trackSkippedRemoteToast: 'Impossible de lire « {title} » — {message}. Morceau ignoré.',
     openNothingPlayable: "Aucun fichier audio pris en charge à lire.",
-    playSongFailed: "Impossible de lire ce morceau."
+    playSongFailed: "Impossible de lire ce morceau.",
+    noSongPlaying: "Aucune chanson en cours de lecture",
+    menuTooltip: "Menu de la chanson"
   },
   miniplayer: {
     title: "Mini-lecteur",
@@ -970,8 +1107,10 @@ export const fr: DeepStringRecord<typeof en> = {
     shuffleLibrary: "Mélanger la bibliothèque",
     replay: "Rejouer",
     library: "Bibliothèque",
-    tracksPlayed: "{count} morceaux lus",
-    trackPlayed: "1 morceau lu",
+    tracksPlayed: {
+      one: "{count} morceau lu",
+      other: "{count} morceaux lus"
+    },
     dropToPlay: "ou déposez des fichiers audio pour lire"
   },
 
@@ -982,17 +1121,30 @@ export const fr: DeepStringRecord<typeof en> = {
   },
 
   songTags: {
-    genresTabDescription: "Affichage de {count} genres",
+    groupNamePlaceholder: "p. ex. Primé",
+    genresTabDescription: {
+      one: "Affichage de {count} genre",
+      other: "Affichage de {count} genres"
+    },
     viewGenre: "Genre",
     viewTags: "Étiquettes",
     emptyTitle: "Aucune étiquette pour l'instant",
     emptySubtitle: "Faites un clic droit sur une chanson et choisissez Modifier les étiquettes pour lui donner un genre — la première valeur est sa catégorie principale, les autres sont des sous-genres.",
-    songCount: "{count} chansons",
-    playAll: "Lire les {count} chansons",
+    songCount: {
+      one: "{count} chanson",
+      other: "{count} chansons"
+    },
+    playAll: {
+      one: "Lire {count} chanson",
+      other: "Lire les {count} chansons"
+    },
     editSongTooltip: "Modifier la chanson",
     editAlbumTooltip: "Modifier l'album",
     goToGenreTooltip: "Parcourir {genre}",
-    artistCount: "{count} artistes",
+    artistCount: {
+      one: "{count} artiste",
+      other: "{count} artistes"
+    },
     artistTagsHeading: "Étiquettes d'artiste",
     songTagsHeading: "Étiquettes de chansons",
     goToArtistTagTooltip: "Parcourir {tag}",
@@ -1012,15 +1164,27 @@ export const fr: DeepStringRecord<typeof en> = {
     createGroupBtn: "Créer",
     groupSelectedTitle: "Grouper les étiquettes sélectionnées",
     groupToast: "{count} étiquettes groupées sous « {name} »",
-    deleteToast: "Supprimé ({count} chansons mises à jour)",
-    artistDeleteToast: "Supprimé ({count} artistes mis à jour)",
+    deleteToast: {
+      one: "Supprimé ({count} chanson mise à jour)",
+      other: "Supprimé ({count} chansons mises à jour)"
+    },
+    artistDeleteToast: {
+      one: "Supprimé ({count} artiste mis à jour)",
+      other: "Supprimé ({count} artistes mis à jour)"
+    },
     renameTag: "Renommer",
     promoteTag: "Promouvoir en genre principal",
     promoteArtistTag: "Promouvoir en étiquette principale",
     renameToast: "Renommé en « {name} » ({count} chansons mises à jour)",
     artistRenameToast: "Renommé en « {name} » ({count} artistes mis à jour)",
-    deleteConfirmMessage: "Supprimer {count} étiquette(s) de toutes les chansons qui les portent? Cette action est irréversible.",
-    artistDeleteConfirmMessage: "Supprimer {count} étiquette(s) de tous les artistes qui les portent? Cette action est irréversible.",
+    deleteConfirmMessage: {
+      one: "Supprimer {count} étiquette de toutes les chansons qui la portent? Cette action est irréversible.",
+      other: "Supprimer {count} étiquettes de toutes les chansons qui les portent? Cette action est irréversible."
+    },
+    artistDeleteConfirmMessage: {
+      one: "Supprimer {count} étiquette de tous les artistes qui la portent? Cette action est irréversible.",
+      other: "Supprimer {count} étiquettes de tous les artistes qui les portent? Cette action est irréversible."
+    },
     deleteBtn: "Supprimer",
     cancelBtn: "Annuler"
   },
@@ -1086,11 +1250,17 @@ export const fr: DeepStringRecord<typeof en> = {
     compilationField: "Compilation (marquer comme Artistes divers)",
     yearField: "Année de sortie",
     discField: "N° de disque",
-    tracksAffected: "S'applique à {count} chansons",
+    tracksAffected: {
+      one: "S'applique à {count} chanson",
+      other: "S'applique à {count} chansons"
+    },
     cancelBtn: "Annuler",
     saveBtn: "Enregistrer",
     saving: "Enregistrement des étiquettes de l'album...",
-    saveSuccess: "Étiquettes d'album mises à jour pour {count} chansons",
+    saveSuccess: {
+      one: "Étiquettes d'album mises à jour pour {count} chanson",
+      other: "Étiquettes d'album mises à jour pour {count} chansons"
+    },
     saveFailedPrefix: "Échec de l'enregistrement des étiquettes d'album : ",
     artworkField: "Pochette",
     artworkEmbedded: "Pochette intégrée",
@@ -1099,7 +1269,10 @@ export const fr: DeepStringRecord<typeof en> = {
     clearArtConfirmTitle: "Effacer la pochette intégrée?",
     clearArtConfirmMessage: "Ceci supprime la pochette intégrée du fichier de chaque piste de cet album. Les pistes utiliseront alors la pochette du dossier ou un espace réservé.",
     clearingArt: "Effacement de la pochette...",
-    clearArtSuccess: "Pochette intégrée effacée pour {count} chansons",
+    clearArtSuccess: {
+      one: "Pochette intégrée effacée pour {count} chanson",
+      other: "Pochette intégrée effacée pour {count} chansons"
+    },
     clearArtFailedPrefix: "Échec de l'effacement de la pochette de l'album : "
   },
   equalizer: {
@@ -1145,8 +1318,12 @@ export const fr: DeepStringRecord<typeof en> = {
     importPlaceholder: "Preamp: -6.2 dB\nFilter 1: ON LSC Fc 105 Hz Gain 5.5 dB Q 0.70\nFilter 2: ON PK Fc 180 Hz Gain -3.1 dB Q 0.53",
     importSubmit: "Importer",
     importErrorEmpty: "Ce profil ne contient aucun filtre. Collez ou choisissez un profil d'égaliseur paramétrique.",
-    importErrorTooManyFilters: "Ce profil contient {count} filtres, mais l'égaliseur en accepte au plus {max}.",
-    importErrorUnsupportedFilter: "La ligne {line} utilise un filtre de type {kind}. Seuls les filtres en cloche (PK), de plateau grave (LSC) et de plateau aigu (HSC) peuvent être importés.",
+    importErrorTooManyFilters: {
+      one: "Ce profil contient {count} filtre, mais l'égaliseur en accepte au plus {max}.",
+      other: "Ce profil contient {count} filtres, mais l'égaliseur en accepte au plus {max}."
+    },
+    importErrorUnsupportedFilters: "Filtres non pris en charge : {filters}. Supprimez-les ou exportez le profil depuis AutoEq, qui n'utilise que des filtres en cloche (PK), de plateau grave (LSC) et de plateau aigu (HSC).",
+    importErrorFilterAt: "{kind} (ligne {line})",
     importErrorUnsupportedLine: "La ligne {line} n'est ni une ligne Preamp ni une ligne Filter : le profil ne peut pas être reproduit exactement.",
     importErrorMalformed: "La ligne {line} est illisible. Vérifiez qu'elle indique Fc, Gain et Q avec des nombres.",
     importErrorOutOfRange: "Ligne {line} : {field} {value} est hors de la plage prise en charge ({min} à {max}).",
@@ -1187,9 +1364,15 @@ export const fr: DeepStringRecord<typeof en> = {
     modeAlbum: "Album",
     fallbackGain: "Gain de secours",
     fallbackGainHint: "Appliqué lorsqu'une chanson n'a ni analyse R128 ni étiquette ReplayGain",
-    analyzing: "Analyse de la bibliothèque : {remaining} chanson(s) restante(s)",
+    analyzing: {
+      one: "Analyse de la bibliothèque : {count} chanson restante",
+      other: "Analyse de la bibliothèque : {count} chansons restantes"
+    },
     analyzed: "Toutes les chansons sont analysées",
-    analysisPaused: "{remaining} chanson(s) non analysée(s) — activez pour analyser en arrière-plan"
+    analysisPaused: {
+      one: "{count} chanson non analysée — activez pour analyser en arrière-plan",
+      other: "{count} chansons non analysées — activez pour analyser en arrière-plan"
+    }
   },
   fades: {
     title: "Fondu & Fondu enchaîné",
@@ -1233,8 +1416,10 @@ export const fr: DeepStringRecord<typeof en> = {
     retrieveArtistDetails: "Récupérer les détails de l'artiste",
     retrieveArtistDetailsTooltip: "Récupérer les liens Discogs, AllMusic, Wikidata, IMDb et réseaux sociaux depuis MusicBrainz",
     retrieveArtistDetailsNoMbidTooltip: "Aucun identifiant d'artiste MusicBrainz trouvé pour cet artiste",
-    retrieveDetailsSuccessOne: "1 lien ajouté depuis MusicBrainz",
-    retrieveDetailsSuccessMany: "{count} liens ajoutés depuis MusicBrainz",
+    retrieveDetailsSuccess: {
+      one: "{count} lien ajouté depuis MusicBrainz",
+      other: "{count} liens ajoutés depuis MusicBrainz"
+    },
     retrieveDetailsNoResults: "Aucun détail supplémentaire trouvé sur MusicBrainz",
     retrieveArtistImage: "Récupérer l'image de l'artiste",
     retrieveArtistImageTooltip: "Récupérer la photo, le logo et le fond de l'artiste depuis fanart.tv, ou une photo depuis Wikidata",
@@ -1269,19 +1454,32 @@ export const fr: DeepStringRecord<typeof en> = {
   },
   artistInfo: {
     panelTitle: "Informations sur l'artiste",
-    sortName: "Nom de tri",
-    gender: "Genre",
     born: "Date de naissance",
     formed: "Date de formation",
     cityRegion: "Ville/Région",
     country: "Pays",
     died: "Date de décès",
     disbanded: "Dissous",
-    genderMale: "Masculin",
-    genderFemale: "Féminin",
-    genderNonBinary: "Non binaire",
-    genderOther: "Autre",
     lessThanOneYearAgo: "Il y a moins d'un an"
+  },
+  artistEvents: {
+    panelTitle: "Concerts et événements à venir",
+    noEvents: "Aucun concert à venir trouvé",
+    cancelled: "Annulé",
+    viewTickets: "Billets",
+    viewDetails: "Détails",
+    concert: "Concert",
+    festival: "Festival",
+    tour: "Tournée",
+    otherPlatforms: "Trouver des billets et dates de tournée sur :",
+    loading: "Chargement des événements à venir...",
+    pastEvents: "Événements passés",
+    showPastEvents: "Afficher les événements passés ({count})",
+    hidePastEvents: "Masquer les événements passés",
+    pagination: "{start}–{end} sur {total}",
+    previousPage: "Page précédente",
+    nextPage: "Page suivante",
+    dateTba: "À dét."
   },
   artistProfileEditor: {
     title: "Modifier l'artiste",
@@ -1371,8 +1569,14 @@ export const fr: DeepStringRecord<typeof en> = {
     retrieveAlbumDetails: "Récupérer les détails de l'album",
     retrieveAlbumDetailsTooltip: "Récupérer les liens Discogs, AllMusic, Wikidata et paroles depuis MusicBrainz, ainsi que la pochette et le visuel du disque depuis fanart.tv",
     retrieveAlbumDetailsNoMbidTooltip: "Aucun identifiant de groupe de parution MusicBrainz trouvé pour cet album",
-    retrieveDetailsSuccessOne: "1 lien ajouté depuis MusicBrainz",
-    retrieveDetailsSuccessMany: "{count} liens ajoutés depuis MusicBrainz",
+    communityRating: "Note de la communauté",
+    reviewOnCritiqueBrainz: "Évaluer sur CritiqueBrainz",
+    reviewOnCritiqueBrainzTooltip: "Ouvrir cet album sur CritiqueBrainz pour lire ou rédiger des critiques",
+    viewOnMusicBrainzTooltip: "Ouvrir cet album sur MusicBrainz",
+    retrieveDetailsSuccess: {
+      one: "{count} lien ajouté depuis MusicBrainz",
+      other: "{count} liens ajoutés depuis MusicBrainz"
+    },
     retrieveDetailsNoResults: "Aucun détail supplémentaire trouvé sur MusicBrainz",
     retrieveDetailsError: "Échec de la récupération des détails de l'album",
     retrievingDetails: "Récupération des détails de l'album...",
@@ -1383,8 +1587,10 @@ export const fr: DeepStringRecord<typeof en> = {
     emptyStateText: "Sélectionnez une chanson de votre collection pour commencer la lecture.",
     queueComplete: "File d'attente terminée",
     contextComplete: "{context} terminée",
-    tracksPlayed: "{count} titres écoutés",
-    trackPlayed: "1 titre écouté",
+    tracksPlayed: {
+      one: "{count} titre écouté",
+      other: "{count} titres écoutés"
+    },
     shuffleLibrary: "Aléatoire bibliothèque",
     replay: "Rejouer",
     exitImmersive: "Quitter le mode immersif",
@@ -1402,6 +1608,7 @@ export const fr: DeepStringRecord<typeof en> = {
     themeDark: "Sombre",
     trackListToggle: "Infos pistes",
     libraryToggle: "Infos bibliothèque",
+    barsToggle: "Barres",
     copyButton: "Copier l'image",
     saveButton: "Enregistrer l'image",
     copySuccess: "Carte de partage copiée dans le presse-papiers",
@@ -1421,12 +1628,16 @@ export const fr: DeepStringRecord<typeof en> = {
     hateAction: "Marquer comme chanson non appréciée"
   },
   common: {
+    closeDialog: "Fermer la boîte de dialogue",
     aboutField: "À propos de {field}",
     scrollLeft: "Défiler vers la gauche",
     scrollRight: "Défiler vers la droite",
     albumArtAlt: "Pochette d'album",
     openImages: "Ouvrir les images",
-    openImagesCount: "Ouvrir {count} images",
+    openImagesCount: {
+      one: "Ouvrir {count} image",
+      other: "Ouvrir {count} images"
+    },
     enableLogoPulse: "Cliquez pour activer la pulsation du logo",
     disableLogoPulse: "Cliquez pour désactiver la pulsation du logo",
     toggleLogoPulsing: "Basculer la pulsation du logo Luminous",
@@ -1443,7 +1654,31 @@ export const fr: DeepStringRecord<typeof en> = {
     connect: "Connecter",
     active: "Actif",
     paused: "En pause",
-    inactive: "Inactif"
+    inactive: "Inactif",
+    create: "Créer"
+  },
+  sortOverrides: {
+    heading: "Remplacements de tri (« Trier comme »)",
+    title: "Trier le titre comme",
+    artist: "Trier l'artiste comme",
+    album: "Trier l'album comme",
+    albumArtist: "Trier l'artiste de l'album comme",
+    composer: "Trier le compositeur comme",
+    genre: "Trier le genre comme",
+    example: "p. ex. Beatles, The",
+  },
+  socialPlatforms: {
+    lyrics: "Paroles",
+    otherDatabases: "Autres bases de données",
+    lyricsPlaceholder: "https://... (p. ex. Genius, Musixmatch)",
+    otherDatabasesPlaceholder: "https://... (p. ex. VGMdb)",
+    customPlaceholder: "https://... (p. ex. critique Pitchfork, notes de pochette, blogue)",
+  },
+  units: {
+    hz: "Hz",
+    khz: "kHz",
+    db: "dB",
+    lufs: "LUFS"
   },
   toast: {
     copyError: "Copier l'erreur dans le presse-papiers",
@@ -1451,6 +1686,21 @@ export const fr: DeepStringRecord<typeof en> = {
     dismiss: "Fermer la notification"
   },
   organizer: {
+    chipAlbumArtist: "Artiste de l'album",
+    chipArtist: "Artiste",
+    chipAlbum: "Album",
+    chipOptionalAlbumFolder: "Dossier d'album facultatif",
+    chipFolderSeparator: "Séparateur de dossiers",
+    chipConditionalDisc: "Préfixe de disque conditionnel",
+    chipTrack: "N° de piste (2 chiffres : 01, 09, 11). Variantes : %track3 (3 chiffres : 001), %rawtrack (sans zéros : 1)",
+    chipOptionalTrack: "N° de piste facultatif (2 chiffres). Variantes : {%track3 }, {%rawtrack }",
+    chipOptionalTrackDot: "N° de piste facultatif avec point (2 chiffres). Variantes : {%track3. }, {%rawtrack. }",
+    chipTitle: "Titre",
+    chipYear: "Année",
+    chipGenre: "Genre",
+    chipFolderLabel: "/ (dossier)",
+    previewFailed: "Échec de la génération de l'aperçu",
+    organizeFailed: "Échec de l'organisation des fichiers",
     title: "Organiser les fichiers",
     subtitle: "Renommer et réorganiser les fichiers selon un modèle d'étiquettes",
     sectionTemplatePattern: "Modèle de nom",
@@ -1483,12 +1733,27 @@ export const fr: DeepStringRecord<typeof en> = {
     statusCollision: "Doublon",
     statusMissingTag: "Étiquette manquante",
     statusError: "Erreur",
-    summaryReady: "{count} morceaux non organisés",
+    summaryReady: {
+      one: "{count} morceau non organisé",
+      other: "{count} morceaux non organisés"
+    },
     nothingToOrganize: "Rien à organiser!",
+    autoOrganizeToggle: "Auto-organiser",
+    autoOrganizeToggleTooltip: "Organisez automatiquement les fichiers en arrière-plan lors de l'arrivée de nouvelles pistes ou de la modification d'étiquettes",
+    autoOrganizeSuccess: {
+      one: "{count} fichier auto-organisé",
+      other: "{count} fichiers auto-organisés"
+    },
+    toastDuplicatesDetected: {
+      one: "{count} doublon détecté lors de l'auto-organisation",
+      other: "{count} doublons détectés lors de l'auto-organisation"
+    },
     cancel: "Annuler",
     applyButton: "Organiser la musique",
-    applySuccessOne: "1 fichier réorganisé avec succès",
-    applySuccessMany: "{count} fichiers réorganisés avec succès",
+    applySuccess: {
+      one: "{count} fichier réorganisé avec succès",
+      other: "{count} fichiers réorganisés avec succès"
+    },
     organizeFilesTooltip: "Organiser les fichiers par modèle d'étiquettes",
     organizeEntireLibrary: "Organiser",
     refreshPreviewTooltip: "Actualiser l'aperçu",
@@ -1500,7 +1765,8 @@ export const fr: DeepStringRecord<typeof en> = {
     noPathRecorded: "(Aucun chemin enregistré)",
     unknownError: "Erreur inconnue",
     applying: "Application en cours...",
-    close: "Fermer"
+    close: "Fermer",
+    toastErrors: "Fichiers qui n'ont pas pu être organisés : {count}"
   },
   picard: {
     openInPicard: "Ouvrir dans Picard",
@@ -1521,6 +1787,16 @@ export const fr: DeepStringRecord<typeof en> = {
     missingPlaylistHint: "Afficher une liste de lecture automatique des morceaux sans identifiant MusicBrainz pour les taguer facilement dans Picard"
   },
   listenbrainz: {
+    tokenRequired: "Veuillez saisir un jeton d'utilisateur",
+    validateFailed: "Échec de la validation du jeton",
+    submittedPending: {
+      one: "{count} écoute en attente soumise",
+      other: "{count} écoutes en attente soumises"
+    },
+    queueEmpty: "La file d'attente est vide",
+    flushFailed: "Échec de l'envoi",
+    syncRatingsError: "Échec de la synchronisation des cotes",
+    connectFailed: "Échec de la connexion à ListenBrainz",
     integrationTitle: "Scrobbler ListenBrainz",
     integrationDesc: "est un carnet d'écoute musical à code source ouvert et sans but lucratif qui garde une trace de chaque morceau écouté sur différentes applications (« scrobbling ») et vous permet d'explorer vos habitudes d'écoute sans vendre vos données personnelles.",
     enableLabel: "Activer le scrobbling ListenBrainz",
@@ -1538,14 +1814,22 @@ export const fr: DeepStringRecord<typeof en> = {
     pauseLabel: "Mettre en pause le scrobbling",
     pauseHint: "Mettez temporairement en pause le scrobbling sans déconnecter votre compte",
     cacheEmpty: "La file d'attente hors ligne est vide",
-    cachePending: "{count} écoute(s) en attente dans la file hors ligne",
+    cachePending: {
+      one: "{count} écoute en attente dans la file hors ligne",
+      other: "{count} écoutes en attente dans la file hors ligne"
+    },
     cacheDesc: "Les écoutes enregistrées hors ligne sont mises en file d'attente et envoyées automatiquement.",
     syncNowBtn: "Synchroniser",
-    syncFavouritesLabel: "Synchroniser les favoris existants",
-    syncFavouritesHint: "Transmettre tous les morceaux favoris actuels ayant un identifiant MusicBrainz",
-    syncFavouritesBtn: "Synchroniser les favoris",
-    syncingFavouritesBtn: "Synchronisation...",
-    syncFavouritesSuccess: "{synced} sur {total} favori(s) synchronisé(s) ({skipped} ignoré(s) sans identifiant MusicBrainz)"
+    critiquebrainzUserLabel: "Profil CritiqueBrainz",
+    critiquebrainzUserHint: "Collez l’URL de votre profil critiquebrainz.org ou votre identifiant d’utilisateur pour récupérer vos notes en étoiles",
+    critiquebrainzUserPlaceholder: "https://critiquebrainz.org/user/...",
+    syncRatingsLabel: "Synchroniser les notes",
+    syncRatingsHint: "Récupérez vos coups de cœur, rejets et notes en étoiles depuis ListenBrainz et CritiqueBrainz, et transmettez vos coups de cœur locaux",
+    syncRatingsBtn: "Synchroniser les notes",
+    syncingRatingsBtn: "Synchronisation...",
+    syncRatingsSuccess: "Récupérés : {loved} coups de cœur; {hated} rejets; {songRatings} notes de morceau; {albumRatings} notes d’album; transmis à ListenBrainz : {pushed}",
+    syncRatingsFailed: "({failed} échec(s) de transmission)",
+    syncRatingsNoCritiquebrainz: "Les notes en étoiles n’ont pas été récupérées : ajoutez votre profil CritiqueBrainz ci-dessus."
   },
   discord: {
     integrationTitle: "Discord Rich Presence",
@@ -1649,7 +1933,10 @@ export const fr: DeepStringRecord<typeof en> = {
   celebrations: {
     firstLaunch: "Bienvenue dans Luminous v{version}!",
     newVersion: "Mise à jour vers Luminous v{version}",
-    milestone: "{count} chansons dans votre bibliothèque!",
+    milestone: {
+      one: "{count} chanson dans votre bibliothèque!",
+      other: "{count} chansons dans votre bibliothèque!"
+    },
     firstFolder: "Premier dossier de musique ajouté!",
     contextComplete: "{name} terminé",
     queueComplete: "Votre file d'attente est terminée",
@@ -1660,10 +1947,14 @@ export const fr: DeepStringRecord<typeof en> = {
     overlayReplaceHint: "Maintenez Maj pour ajouter à la place",
     overlayAppendTitle: "Déposer pour ajouter à la file d'attente",
     overlayAppendHint: "La lecture ne sera pas interrompue",
-    playingSong: "Lecture d'1 chanson",
-    playingSongs: "Lecture de {count} chansons",
-    addedSong: "1 chanson ajoutée à la file d'attente",
-    addedSongs: "{count} chansons ajoutées à la file d'attente",
+    playingSongs: {
+      one: "Lecture de {count} chanson",
+      other: "Lecture de {count} chansons"
+    },
+    addedSongs: {
+      one: "{count} chanson ajoutée à la file d'attente",
+      other: "{count} chansons ajoutées à la file d'attente"
+    },
     nothingToAdd: "Aucun fichier audio pris en charge trouvé à ajouter."
   },
   walkthrough: {
@@ -1710,6 +2001,7 @@ export const fr: DeepStringRecord<typeof en> = {
     }
   },
   tasks: {
+    taskFailed: "Échec de la tâche",
     title: "Tâches en arrière-plan",
     clear: "Effacer",
     clearCompleted: "Effacer les tâches terminées",
@@ -1717,6 +2009,7 @@ export const fr: DeepStringRecord<typeof en> = {
     allDone: "Tâches terminées",
     syncingWebdav: "Synchronisation de {name}…",
     syncingWebdavCount: "Synchronisation de {name} ({count} éléments)…",
+    syncingWebdavDaily: "Vérification quotidienne complète de {name} ({count} éléments), une fois par jour, donc plus longue que d’habitude…",
     savingAlbumTags: "Enregistrement des étiquettes pour {album}…",
     savingTagsCount: "Enregistrement des étiquettes ({current}/{total})…",
     albumTagsSaved: "Étiquettes enregistrées pour {album}",
@@ -1731,6 +2024,10 @@ export const fr: DeepStringRecord<typeof en> = {
     scanPhaseUpdating: "mise à jour de la bibliothèque"
   },
   audioPipeline: {
+    channelsStereo: "Stéréo (2 can.)",
+    channelsMono: "Mono (1 can.)",
+    channelsCount: "{count} can.",
+    defaultOutputDevice: "Périphérique de sortie par défaut",
     title: "Chaîne audio",
     badgeTooltip: "Qualité audio : {tier} — cliquer pour afficher la chaîne audio",
     qualityTier: "Qualité",
@@ -1764,6 +2061,7 @@ export const fr: DeepStringRecord<typeof en> = {
     equalizer: "Égaliseur et DSP",
     equalizerDisabled: "Désactivé",
     equalizerActive: "{mode} ({bands} active(s))",
+    eqModeGraphic: "Graphique à 10 bandes",
     limiter: "Limiteur",
     outputFormat: "Format",
     outputDevice: "Périphérique",

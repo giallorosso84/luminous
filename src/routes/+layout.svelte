@@ -26,6 +26,7 @@
   import { updaterStore } from '../lib/stores/updater.svelte';
   import { picardStore } from '../lib/stores/picard.svelte';
   import { scrobblerStore } from '../lib/stores/scrobbler.svelte';
+  import { organizeStore } from '../lib/stores/organizer.svelte';
   import { toastStore } from '../lib/stores/toast.svelte';
   import { walkthroughStore } from '../lib/stores/walkthrough.svelte';
   import { welcomeStore } from '../lib/stores/welcome.svelte';
@@ -33,6 +34,7 @@
   import { generateEllipseGradientSvg } from '../lib/utils/ellipseGradient';
   import { formatWindowTitle } from '../lib/utils/formatters';
   import { FrontendErrorReporter } from '../lib/utils/frontendError';
+  import TagEditor from '../lib/components/TagEditor.svelte';
   import { onMount } from 'svelte';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -56,6 +58,7 @@
     walkthroughStore.start();
   }
   let isShortcutsModalOpen = $state(false);
+  let editingSongId = $state<number | null>(null);
   let isDragActive = $state(false);
   let isShiftHeld = $state(false);
   let isResizingSidebar = $state(false);
@@ -157,12 +160,29 @@
     updaterStore.init();
     picardStore.init();
     scrobblerStore.init();
+    organizeStore.init();
     void getCurrentWindow().show().catch(() => {});
     invoke<boolean>('is_remote_devtools_enabled')
       .then((enabled) => {
         if (enabled) windowTitleAppName = 'Luminous Debug';
       })
       .catch(() => {});
+
+    if (import.meta.env.DEV) {
+      import('../lib/scripting').then(({ installScriptingApi, registerDialogHostControls }) => {
+        installScriptingApi();
+        registerDialogHostControls({
+          openShortcuts: () => { isShortcutsModalOpen = true; },
+          openTagEditor: (songId: number) => { editingSongId = songId; },
+          closeAll: () => {
+            isShortcutsModalOpen = false;
+            editingSongId = null;
+          },
+          isShortcutsOpen: () => isShortcutsModalOpen,
+          isTagEditorOpen: () => editingSongId !== null,
+        });
+      });
+    }
 
     function handleGlobalHotkeys(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -235,17 +255,13 @@
       if (append) {
         const outcome = await playerStore.addPathsToQueue(paths);
         if (outcome.added > 0) {
-          const text = outcome.added === 1
-            ? i18n.t('dragDrop.addedSong', {}, 'Added 1 song to queue')
-            : i18n.t('dragDrop.addedSongs', { count: outcome.added }, `Added ${outcome.added} songs to queue`);
+          const text = i18n.plural("dragDrop.addedSongs", outcome.added);
           toastStore.show(text, 'success');
         }
       } else {
         const outcome = await playerStore.openAndPlay(paths);
         if (outcome.played > 0) {
-          const text = outcome.played === 1
-            ? i18n.t('dragDrop.playingSong', {}, 'Playing 1 song')
-            : i18n.t('dragDrop.playingSongs', { count: outcome.played }, `Playing ${outcome.played} songs`);
+          const text = i18n.plural("dragDrop.playingSongs", outcome.played);
           toastStore.show(text, 'success');
         }
       }
@@ -503,14 +519,14 @@
                     onkeydown={handleSidebarKeyDown}
                   >
                     <!-- Expanded hover/touch area wrapper -->
-                    <div class="absolute -inset-x-2 top-0 bottom-0 cursor-col-resize"></div>
+                    <div class="absolute left-0 -right-2 top-0 bottom-0 cursor-col-resize"></div>
                   </div>
                 {/if}
               </div>
             {/if}
 
             <!-- Central Content Area -->
-            <main class="flex-1 bg-brand-main overflow-hidden flex flex-col">
+            <main class="@container flex-1 bg-brand-main overflow-hidden flex flex-col">
               {@render children()}
             </main>
 
@@ -532,7 +548,7 @@
                   onkeydown={handleRightPanelKeyDown}
                 >
                   <!-- Expanded hover/touch area wrapper -->
-                  <div class="absolute -inset-x-2 top-0 bottom-0 cursor-col-resize"></div>
+                  <div class="absolute left-0 -right-2 top-0 bottom-0 cursor-col-resize"></div>
                 </div>
 
                 <RightPanel isOpen={windowLayoutStore.rightPanelOpen} width={windowLayoutStore.rightPanelWidth} onClose={() => windowLayoutStore.toggleRightPanel()} />
@@ -545,7 +561,7 @@
         <!-- pb is larger than pt to offset the floating PlayerBar dock (h-20 + bottom-4 inset
              ≈ 96px) that overlays the bottom of this face, so the content centers within the
              visible area above the dock rather than the full face height. -->
-        <div class="flip-face flip-back overflow-hidden bg-brand-main flex flex-col items-center justify-center pt-8 px-4 min-[420px]:px-8 pb-32 select-none {!windowLayoutStore.effectiveImmersiveMode ? 'pointer-events-none' : 'pointer-events-auto'}">
+        <div class="flip-face flip-back overflow-hidden bg-brand-main flex flex-col items-center justify-center pt-8 px-4 xs:px-8 pb-32 select-none {!windowLayoutStore.effectiveImmersiveMode ? 'pointer-events-none' : 'pointer-events-auto'}">
           <!-- Immersive Ambient Background: a soft layered-ellipse SVG gradient
                tinted from the current song's artwork colors (see
                immersiveAmbientSvg above). Renders the same, cheaply, on every
@@ -569,7 +585,7 @@
           <div class="relative z-10 flex flex-col md:flex-row items-center gap-12 max-w-4xl w-full justify-center">
             {#if playerStore.currentSong}
               <!-- Floating Cover Art Frame -->
-              <div class="w-56 h-56 min-[420px]:w-72 min-[420px]:h-72 md:w-[380px] md:h-[380px] overflow-hidden shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] border border-brand-border/40 hover:scale-[1.02] transition-transform duration-200 bg-brand-sidebar flex items-center justify-center relative select-none">
+              <div class="w-56 h-56 xs:w-72 xs:h-72 md:w-[380px] md:h-[380px] overflow-hidden shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] border border-brand-border/40 hover:scale-[1.02] transition-transform duration-200 bg-brand-sidebar flex items-center justify-center relative select-none">
                 <CoverArt
                   songId={playerStore.currentSong?.id}
                   artEmbedded={playerStore.currentSong?.art_embedded}
@@ -652,6 +668,10 @@
 
 {#if isShortcutsModalOpen}
   <KeyboardShortcutsModal onClose={() => (isShortcutsModalOpen = false)} />
+{/if}
+
+{#if editingSongId !== null}
+  <TagEditor songId={editingSongId} onClose={() => { editingSongId = null; }} />
 {/if}
 
 {#if welcomeStore.initialized && !welcomeStore.hasSeen}

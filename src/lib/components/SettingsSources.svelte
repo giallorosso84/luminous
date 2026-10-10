@@ -8,6 +8,7 @@
   import { onMount } from "svelte";
   import { hierarchySidecarStore } from "../stores/hierarchySidecar.svelte";
   import { prefs } from "../stores/prefs.svelte";
+  import { organizeStore } from "../stores/organizer.svelte";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import Toggle from "./Toggle.svelte";
   import Select from "./Select.svelte";
@@ -78,7 +79,7 @@
         (res?.band_logos_exported ?? 0) +
         (res?.banners_exported ?? 0);
       if (total > 0) {
-        tasksStore.completeTask(taskId, i18n.t("settings.artworkSweepSuccess", { count: total }));
+        tasksStore.completeTask(taskId, i18n.plural("settings.artworkSweepSuccess", total));
       } else {
         tasksStore.completeTask(taskId, i18n.t("settings.artworkSweepNone"));
       }
@@ -131,6 +132,9 @@
     }
   }
 
+  // Fixed code from `remote_scheduler::SYNC_IN_PROGRESS`.
+  const isSyncInProgressError = (e: unknown) => String((e as any)?.message ?? e) === "sync-in-progress";
+
   function isServerSyncing(serverId: number): boolean {
     return syncingServerId === serverId || tasksStore.isTaskActive(`webdav-sync-${serverId}`);
   }
@@ -155,9 +159,18 @@
         updated: stats.updated,
         errors: stats.errors,
       });
+      if (stats.errors > 0) syncFeedback += ` ${i18n.t("settings.webdavSyncErrorsHint")}`;
       tasksStore.completeTask(taskId, `${server.name}: ${syncFeedback}`);
       await loadWebdavServers();
     } catch (e: any) {
+      if (isSyncInProgressError(e)) {
+        // Another sync of this server is running and owns the task row; its
+        // progress events re-create it if this clear removed it.
+        tasksStore.clearTask(taskId);
+        syncFeedback = i18n.t("settings.syncAlreadyRunning", { name: server.name });
+        toastStore.show(syncFeedback, "info");
+        return;
+      }
       console.error("Failed to sync WebDAV server:", e);
       const errMsg = String(e?.message || e);
       syncFeedback = errMsg;
@@ -174,8 +187,8 @@
   const formatDiskSize = (bytes: number) =>
     bytes >= 1073741824 ? `${formatNumber(bytes / 1073741824, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} GB` : formatFileSize(bytes);
   const diskSizeLabel = $derived.by(() => {
-    const { total_filesize_bytes, album_art_bytes, artist_art_bytes } = collectionStore.stats;
-    const total = total_filesize_bytes + (album_art_bytes ?? 0) + (artist_art_bytes ?? 0);
+    const { total_filesize_bytes, album_art_bytes, artist_art_bytes, thumbnail_bytes } = collectionStore.stats;
+    const total = total_filesize_bytes + (album_art_bytes ?? 0) + (artist_art_bytes ?? 0) + (thumbnail_bytes ?? 0);
     return `${formatNumber(total / 1073741824, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} GB`;
   });
   const diskSizeBreakdown = $derived(
@@ -183,6 +196,7 @@
       i18n.t('settings.statsSizeMusic', { size: formatDiskSize(collectionStore.stats.total_filesize_bytes) }),
       i18n.t('settings.statsSizeAlbumArt', { size: formatDiskSize(collectionStore.stats.album_art_bytes) }),
       i18n.t('settings.statsSizeArtistArt', { size: formatDiskSize(collectionStore.stats.artist_art_bytes) }),
+      i18n.t('settings.statsSizeThumbnails', { size: formatDiskSize(collectionStore.stats.thumbnail_bytes) }),
     ].join("\n"),
   );
 
@@ -223,6 +237,11 @@
       const stats = await invoke<SubsonicSyncStats>("sync_subsonic_server", { id: server.id });
       subsonicSyncFeedback = `${server.name}: ${i18n.t("settings.subsonicSyncComplete", { ...stats })}`;
     } catch (e: any) {
+      if (isSyncInProgressError(e)) {
+        subsonicSyncFeedback = i18n.t("settings.syncAlreadyRunning", { name: server.name });
+        toastStore.show(subsonicSyncFeedback, "info");
+        return;
+      }
       console.error("Failed to sync media server:", e);
       subsonicSyncFeedback = i18n.t("settings.subsonicSyncFailed", {
         name: server.name,
@@ -355,14 +374,14 @@
 </script>
 
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
-  <div class="pb-3 flex justify-between items-center">
+  <div class="pb-3 flex justify-between items-center gap-4">
     <div class="flex items-center gap-3">
       <div class="p-2 rounded-xl bg-brand-accent/15 text-brand-accent-text shrink-0">
         <Folder class="w-5 h-5" />
       </div>
       <div class="space-y-1 min-w-0">
         <h3 class="font-bold text-sm text-brand-text-primary">{i18n.t('settings.watchedFoldersTitle')}</h3>
-        <p class="text-xs text-brand-text-secondary leading-relaxed text-pretty">{i18n.t('settings.watchedFoldersSubtitle', {}, 'Manage directories to scan for music files.')}</p>
+        <p class="text-xs text-brand-text-secondary leading-relaxed text-pretty">{i18n.t('settings.watchedFoldersSubtitle')}</p>
       </div>
     </div>
     <Button onclick={() => collectionStore.addDirectoryDialog()} variant="primary" size="sm">
@@ -373,7 +392,7 @@
   {#if loudnessStore.enabled && loudnessStore.analysisRemaining > 0}
     <div class="flex items-center gap-2.5 bg-brand-accent/10 border border-brand-accent/30 rounded-xl px-4 py-2.5 text-xs text-brand-text-secondary">
       <Activity class="w-4 h-4 text-brand-accent-text shrink-0" />
-      <span>{i18n.t('settings.loudnessAnalysisActive', { remaining: loudnessStore.analysisRemaining })}</span>
+      <span>{i18n.plural('settings.loudnessAnalysisActive', loudnessStore.analysisRemaining)}</span>
     </div>
   {/if}
 
@@ -476,7 +495,7 @@
     {/if}
 
     {#if collectionStore.directories.length === 0}
-      <div class="border border-dashed border-brand-border rounded-xl py-12 text-center text-brand-text-secondary">
+      <div class="border border-dashed border-brand-border rounded-xl px-6 py-12 text-center text-brand-text-secondary">
         <Folder class="w-12 h-12 mx-auto mb-2 text-brand-text-secondary/50" />
         <h4 class="font-semibold text-brand-text-primary mb-1">{i18n.t('settings.noFoldersTitle')}</h4>
         <p class="text-xs text-brand-text-secondary mb-4 text-pretty">{i18n.t('settings.noFoldersText')}</p>
@@ -487,7 +506,7 @@
 
 <!-- WebDAV Remote Libraries (#682) -->
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
-  <div class="pb-3 flex justify-between items-center">
+  <div class="pb-3 flex justify-between items-center gap-4">
     <div class="flex items-center gap-3">
       <div class="p-2 rounded-xl bg-brand-accent/15 text-brand-accent-text shrink-0">
         <Cloud class="w-5 h-5" />
@@ -597,7 +616,7 @@
     {/each}
 
     {#if collectionStore.webdavServers.length === 0}
-      <div class="border border-dashed border-brand-border rounded-xl py-8 text-center text-brand-text-secondary">
+      <div class="border border-dashed border-brand-border rounded-xl px-6 py-8 text-center text-brand-text-secondary">
         <Cloud class="w-10 h-10 mx-auto mb-2 text-brand-text-secondary/50" />
         <h4 class="font-semibold text-brand-text-primary mb-1 text-xs">{i18n.t('settings.webdavNoServersTitle')}</h4>
         <p class="text-xs text-brand-text-secondary text-pretty">{i18n.t('settings.webdavNoServersText')}</p>
@@ -619,7 +638,7 @@
 
 <!-- OpenSubsonic media servers (#916) -->
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-4">
-  <div class="pb-3 flex justify-between items-center">
+  <div class="pb-3 flex justify-between items-center gap-4">
     <div class="flex items-center gap-3">
       <div class="p-2 rounded-xl bg-brand-accent/15 text-brand-accent-text shrink-0">
         <Cloud class="w-5 h-5" />
@@ -732,7 +751,7 @@
     {/each}
 
     {#if collectionStore.subsonicServers.length === 0}
-      <div class="border border-dashed border-brand-border rounded-xl py-8 text-center text-brand-text-secondary">
+      <div class="border border-dashed border-brand-border rounded-xl px-6 py-8 text-center text-brand-text-secondary">
         <Cloud class="w-10 h-10 mx-auto mb-2 text-brand-text-secondary/50" />
         <h4 class="font-semibold text-brand-text-primary mb-1 text-xs">{i18n.t('settings.subsonicNoServersTitle')}</h4>
         <p class="text-xs text-brand-text-secondary text-pretty">{i18n.t('settings.subsonicNoServersText')}</p>
@@ -753,7 +772,7 @@
 {/if}
 
 <div class="bg-brand-sidebar border border-brand-border rounded-xl p-6 space-y-5">
-  <div class="pb-3 flex items-center justify-between">
+  <div class="pb-3 flex items-center justify-between gap-4">
     <div class="flex items-center gap-3">
       <div class="p-2 rounded-xl bg-brand-accent/15 text-brand-accent-text shrink-0">
         <RefreshCw class="w-5 h-5" />
@@ -835,6 +854,18 @@
 
     <div class="flex items-center justify-between gap-4">
       <div class="flex flex-col gap-0.5 min-w-0">
+        <span class="text-sm font-medium text-brand-text-primary">{i18n.t('settings.autoOrganizeLabel')}</span>
+        <p class="text-xs text-brand-text-secondary text-pretty">{i18n.t('settings.autoOrganizeHint')}</p>
+      </div>
+      <Toggle
+        checked={organizeStore.autoOrganize}
+        onchange={(v) => organizeStore.setAutoOrganize(v)}
+        label={i18n.t('settings.autoOrganizeLabel')}
+      />
+    </div>
+
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex flex-col gap-0.5 min-w-0">
         <span class="text-sm font-medium text-brand-text-primary">{i18n.t('settings.saveArtworkToFoldersLabel')}</span>
         <p class="text-xs text-brand-text-secondary text-pretty">{i18n.t('settings.saveArtworkToFoldersHint')}</p>
       </div>
@@ -857,7 +888,7 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+    <div class="grid grid-cols-2 @3xl:grid-cols-4 gap-4 text-xs">
     <div class="bg-brand-main/40 border border-brand-border rounded-lg p-3">
       <span class="text-xs text-brand-text-secondary uppercase font-semibold">{i18n.t('settings.statsSongs')}</span>
       <p class="text-base font-bold text-brand-text-primary mt-0.5">{formatNumber(collectionStore.stats.total_songs)}</p>

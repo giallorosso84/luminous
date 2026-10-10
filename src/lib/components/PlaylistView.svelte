@@ -65,7 +65,7 @@
   import SearchEmptyState from "./SearchEmptyState.svelte";
   import { matchesSongSearch } from "../utils/songSearch";
   import { portal } from "../utils/portal";
-  import { formatSampleRate, formatBitDepth, formatChannels, formatFileSize, formatDuration } from "../utils/formatters";
+  import { formatSampleRate, formatBitDepth, formatChannels, formatFileSize, formatDuration, formatHoursMinutes } from "../utils/formatters";
   import { formatDateAdded } from "../utils/date";
   import { CONTEXT_MENU_WIDTH_PX } from "../constants";
   import { compareSongs } from "../utils/songSort";
@@ -98,7 +98,7 @@
   let overflowButtonEl = $state<HTMLButtonElement | undefined>(undefined);
 
   let showSaveQueueModal = $state(false);
-  let saveQueueName = $state("Queue Playlist");
+  let saveQueueName = $state(i18n.t("playlists.queuePlaylistDefaultName"));
 
   function toggleOverflowMenu() {
     if (showOverflowMenu) {
@@ -309,12 +309,7 @@
       (sum, item) => sum + (item.song?.length_nanosec ?? 0),
       0
     );
-    if (!totalNs) return "0m";
-    const totalSec = Math.floor(totalNs / 1_000_000_000);
-    const m = Math.floor(totalSec / 60);
-    const h = Math.floor(m / 60);
-    const remM = m % 60;
-    return h > 0 ? `${h}h ${remM}m` : `${m}m`;
+    return formatHoursMinutes(Math.floor(totalNs / 1_000_000_000 / 60));
   });
 
   let rawGenre = $derived.by(() => {
@@ -560,7 +555,7 @@
     const songIds = playlistsStore.activePlaylistTracks.filter((t) => t.song).map((t) => t.song!.id);
     if (songIds.length === 0) return;
 
-    saveQueueName = `Queue Playlist`;
+    saveQueueName = i18n.t("playlists.queuePlaylistDefaultName");
     showSaveQueueModal = true;
   }
 
@@ -680,10 +675,10 @@
             <div class="flex items-center gap-3 group/title">
               <h1
                 ondblclick={isQueue ? undefined : startRename}
-                class="text-3xl sm:text-4xl font-heading font-bold text-brand-text-primary transition-colors truncate py-0.5 leading-snug {isQueue ? '' : 'hover:text-brand-accent-text'}"
+                class="text-3xl @xl:text-4xl font-heading font-bold text-brand-text-primary transition-colors truncate py-0.5 leading-snug {isQueue ? '' : 'hover:text-brand-accent-text'}"
                 title={isQueue ? undefined : i18n.t("playlists.renamePlaylistTooltip")}
               >
-                {activePlaylist.name}
+                {isQueue ? getPlaylistDisplayName(activePlaylist) : activePlaylist.name}
               </h1>
               {#if !isQueue}
                 <button
@@ -709,9 +704,7 @@
 
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-brand-text-primary font-medium">
             <span>
-              {playlistsStore.activePlaylistTracks.length === 1
-                ? i18n.t("playlists.oneSong")
-                : i18n.t("playlists.songsCount", { count: playlistsStore.activePlaylistTracks.length })}
+              {i18n.plural("playlists.songsCount", playlistsStore.activePlaylistTracks.length)}
             </span>
             <span>•</span>
             <span>{totalRuntimeLabel}</span>
@@ -817,7 +810,7 @@
 
         {#if !windowLayoutStore.isDetailHeaderCollapsed}
         {#if isQueue}
-          <div class="w-40 h-40 hidden sm:flex shrink-0 bg-brand-main bg-gradient-to-br from-brand-accent/25 to-brand-accent/15 items-center justify-center overflow-hidden border border-brand-accent/30 shadow-[0_0_28px_3px] shadow-brand-accent/40">
+          <div class="w-40 h-40 hidden @xl:flex shrink-0 bg-brand-main bg-gradient-to-br from-brand-accent/25 to-brand-accent/15 items-center justify-center overflow-hidden border border-brand-accent/30 shadow-[0_0_28px_3px] shadow-brand-accent/40">
             {#key playerStore.currentSong?.id}
               <div class="w-full h-full" in:fade={{ duration: 200 }}>
                 {#if playerStore.currentSong}
@@ -837,15 +830,15 @@
             {/key}
           </div>
         {:else if isSmartPlaylist && topAlbums.length > 0}
-          <div class="w-40 h-40 hidden sm:flex shrink-0 bg-brand-main bg-gradient-to-br from-[#C2410C]/25 to-[#F59E0B]/15 items-center justify-center overflow-hidden border border-[#F59E0B]/30 shadow-[0_0_28px_3px_rgba(245,158,11,0.4)]">
+          <div class="w-40 h-40 hidden @xl:flex shrink-0 bg-brand-main bg-gradient-to-br from-[#C2410C]/25 to-[#F59E0B]/15 items-center justify-center overflow-hidden border border-[#F59E0B]/30 shadow-[0_0_28px_3px_rgba(245,158,11,0.4)]">
             <CoverStack covers={topAlbums} sizeClass="w-[82%] h-[82%]" />
           </div>
         {:else if isSmartPlaylist}
-          <div class="w-40 h-40 hidden sm:flex shrink-0 bg-brand-main bg-gradient-to-br from-[#C2410C]/25 to-[#F59E0B]/15 items-center justify-center overflow-hidden border border-[#F59E0B]/30 shadow-[0_0_28px_3px_rgba(245,158,11,0.4)]">
+          <div class="w-40 h-40 hidden @xl:flex shrink-0 bg-brand-main bg-gradient-to-br from-[#C2410C]/25 to-[#F59E0B]/15 items-center justify-center overflow-hidden border border-[#F59E0B]/30 shadow-[0_0_28px_3px_rgba(245,158,11,0.4)]">
             <Sparkles class="w-16 h-16 text-[#F59E0B]" />
           </div>
         {:else if topAlbums.length > 0}
-          <div class="hidden sm:flex items-start shrink-0 shadow-xl">
+          <div class="hidden @xl:flex items-start shrink-0 shadow-xl">
             <CoverMosaic covers={topAlbums} sizeClass="h-36" />
           </div>
         {/if}
@@ -972,7 +965,7 @@
       {#if duplicateCount > 0}
         <ContextMenuItem
           icon={CopyPlus}
-          label={i18n.t("playlists.removeDuplicatesBtn", { count: duplicateCount })}
+          label={i18n.plural("playlists.removeDuplicatesBtn", duplicateCount)}
           onclick={() => { removeDuplicates(); showOverflowMenu = false; }}
         />
       {/if}
@@ -1080,13 +1073,13 @@
     <form onsubmit={(e) => { e.preventDefault(); confirmSaveQueueAsCustomPlaylist(); }} class="flex flex-col gap-4 p-6 bg-brand-sidebar">
       <div class="flex flex-col gap-1.5">
         <label for="save-queue-name-input" class="font-medium text-xs text-brand-text-secondary uppercase tracking-wider">
-          {i18n.t("playlists.saveQueueNameLabel", {}, "Playlist Name")}
+          {i18n.t("playlists.saveQueueNameLabel")}
         </label>
         <Input
           id="save-queue-name-input"
           type="text"
           bind:value={saveQueueName}
-          placeholder={i18n.t("playlists.saveQueueNamePlaceholder", {}, "My Queue Playlist")}
+          placeholder={i18n.t("playlists.saveQueueNamePlaceholder")}
           class="w-full"
           required
           autofocus
@@ -1098,7 +1091,7 @@
           {i18n.t("playlists.cancel", {}, "Cancel")}
         </Button>
         <Button type="submit" variant="primary" size="sm">
-          {i18n.t("playlists.saveQueueConfirm", {}, "Save")}
+          {i18n.t("common.save")}
         </Button>
       </div>
     </form>

@@ -17,6 +17,8 @@ import {
 } from "../utils/colorUtils";
 import { LIGHTNESS_STEP } from "../constants";
 import { prefersReducedMotion } from "../utils/motion";
+import { addonsStore, type AddonsStore, type AddonTheme } from "./addons.svelte";
+import { ADDON_CATALOG } from "../addons/catalog";
 
 const MAX_READABILITY_ADJUST_STEPS = 30;
 
@@ -55,15 +57,15 @@ export interface ExtractedColors {
 }
 
 /**
- * Dusty slate blue, the dark theme's UI accent (badges, buttons, sliders,
- * active states) — clears the strict 4.5:1 WCAG text-contrast threshold
- * against the near-black canvas (~4.96:1). Per the Luminous Logo System
- * (docs/Luminous Logo System.dc.html), the in-app reactive logo's glow/ring
- * re-target to this same active-theme accent/accent-hover pair — the fixed
- * Indigo/Gold brand colors in app-icon.svg are reserved for the static
- * "at rest" mark (app icon, marketing) only.
+ * Indigo, the Luminous UI accent (badges, buttons, sliders, active states).
+ * Per the Luminous Logo System (docs/Luminous Logo System.dc.html), the
+ * in-app reactive logo's glow/ring re-target to this same active-theme
+ * accent/accent-hover pair — the fixed Indigo/Gold brand colors in
+ * app-icon.svg are reserved for the static "at rest" mark only. Against the
+ * dark canvas it clears WCAG 1.4.11's 3:1 non-text threshold; accent-colored
+ * *text* is lifted to 4.5:1 separately via clampForContrast().
  */
-const LUMINOUS_DARK_ACCENT = "#6f7ea9";
+const LUMINOUS_ACCENT = "#4f5bd5";
 
 /**
  * "System" auto-theme: adapts to the OS light/dark preference. Panels
@@ -75,38 +77,55 @@ const LUMINOUS_DARK_ACCENT = "#6f7ea9";
  * silently break editing.
  */
 export const LUMINOUS_DARK_COLORS: ThemeColors = {
-  "bg-main": "#08090c",
-  "bg-sidebar": "#1c1f29",
-  "bg-playerbar": "#191b23",
-  "color-accent": LUMINOUS_DARK_ACCENT,
-  "color-accent-hover": blendToward(LUMINOUS_DARK_ACCENT, 255, 0.2),
+  "bg-main": "#191918",
+  "bg-sidebar": "#222220",
+  "bg-playerbar": "#2a2a27",
+  "color-accent": LUMINOUS_ACCENT,
+  "color-accent-hover": "#626fe8",
   "color-text-primary": "#f1f3f8",
   "color-text-secondary": "#a6adc4",
-  "color-border": "#3d4255"
+  "color-border": "#38382f"
 };
-
-/**
- * Same hex as LUMINOUS_DARK_ACCENT — unlike the old orange accent (which
- * had to darken into brown/rust to read against a light canvas), this slate
- * blue already clears WCAG 1.4.11's 3:1 non-text threshold as-is (~3.34:1
- * against this light canvas), so both schemes can share one literal color.
- */
-const LUMINOUS_LIGHT_ACCENT = LUMINOUS_DARK_ACCENT;
 
 export const LUMINOUS_LIGHT_COLORS: ThemeColors = {
-  "bg-main": "#e9eaf0",
-  "bg-sidebar": "#ffffff",
-  "bg-playerbar": "#ffffff",
-  "color-accent": LUMINOUS_LIGHT_ACCENT,
-  "color-accent-hover": blendToward(LUMINOUS_LIGHT_ACCENT, 255, 0.2),
+  "bg-main": "#eee9df",
+  "bg-sidebar": "#e5e0d4",
+  "bg-playerbar": "#e5e0d4",
+  "color-accent": LUMINOUS_ACCENT,
+  "color-accent-hover": "#3a45b0",
   "color-text-primary": "#16181d",
   "color-text-secondary": "#5a6072",
-  // #dcdce4 measured ~1.8:1 against the white sidebar/card surfaces here —
-  // well under WCAG 1.4.11's 3:1 non-text contrast floor, so borders (e.g.
-  // the playlist toolbar's icon buttons) were nearly invisible. This slate,
-  // hue-matched to LUMINOUS_LIGHT_ACCENT, clears ~3.7:1.
-  "color-border": "#7f84a0"
+  "color-border": "#cdc7b8"
 };
+
+const HEX6 = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Returns `colors` with its text colours swapped for a readable Luminous
+ * pair when they fail WCAG AA against any of the three surfaces. The theme
+ * builder has no text-colour pickers, so a theme started from a dark theme
+ * (light text) would otherwise stay light-on-light after the user picks light
+ * backgrounds. Text colours that already pass (e.g. an imported theme's) are
+ * left alone.
+ */
+export function withReadableText(colors: ThemeColors): ThemeColors {
+  const surfaces = [colors["bg-main"], colors["bg-sidebar"], colors["bg-playerbar"]];
+  if (!surfaces.every((c) => HEX6.test(c))) return colors;
+  const passes = (text: string) => HEX6.test(text) && surfaces.every((bg) => checkWcagCompliance(text, bg).wcagAA);
+  if (passes(colors["color-text-primary"]) && passes(colors["color-text-secondary"])) return colors;
+
+  const light = LUMINOUS_LIGHT_COLORS;
+  const dark = LUMINOUS_DARK_COLORS;
+  const [first, second] = isLightColor(colors["bg-main"]) ? [light, dark] : [dark, light];
+  const pair = [first, second].find(
+    (p) => passes(p["color-text-primary"]) && passes(p["color-text-secondary"])
+  ) ?? first;
+  return {
+    ...colors,
+    "color-text-primary": pair["color-text-primary"],
+    "color-text-secondary": pair["color-text-secondary"]
+  };
+}
 
 /** Blends a hex color toward white (factor > 0) or black (factor < 0). */
 export function blendToward(hex: string, target: 0 | 255, amount: number): string {
@@ -564,10 +583,25 @@ export class ThemeStore {
    */
   colorSchemeMode = $state<"light" | "dark" | "system">("system");
 
-  constructor() {}
+  /**
+   * Add-on theme id restored from settings (or the last one active) that
+   * isn't usable right now — unregistered, unowned or still downloading.
+   * The saved `active_theme_id` is never overwritten while this is set, so
+   * the choice comes back once the add-on becomes owned again.
+   */
+  pendingAddonThemeId: string | null = null;
+  /** True while the painted theme is a pending add-on's provisional palette (#1438). */
+  private paintedProvisional = false;
+  private addons: AddonsStore;
+  private unsubscribeAddons: (() => void) | null = null;
+
+  constructor(addons: AddonsStore = addonsStore) {
+    this.addons = addons;
+  }
 
   async init() {
     this.watchSystemColorScheme();
+    this.unsubscribeAddons ??= this.addons.subscribe(() => this.reconcileAddonTheme());
 
     try {
       const settings = await invoke<Record<string, string>>("get_all_app_settings");
@@ -581,8 +615,12 @@ export class ThemeStore {
         }
         if (settings.active_theme_id) {
           const themeId = settings.active_theme_id;
-          if (PREDEFINED_THEMES.some(t => t.id === themeId) || this.customThemes.some(t => t.id === themeId)) {
+          if (this.isBuiltInThemeId(themeId)) {
             this.activeThemeId = themeId;
+          } else {
+            // Not a predefined or custom theme: assume an add-on id and wait
+            // for the registry to report it owned (reconcileAddonTheme).
+            this.pendingAddonThemeId = themeId;
           }
         }
         if (settings.color_scheme_mode === "light" || settings.color_scheme_mode === "dark" || settings.color_scheme_mode === "system") {
@@ -637,11 +675,67 @@ export class ThemeStore {
     return true;
   }
 
+  /**
+   * A saved add-on theme the backend hasn't ruled on yet. Its public palette
+   * (no overlay) stands in so the app isn't painted as System for a moment on
+   * every launch (#1438). Never overrides a theme picked since launch, and
+   * ends as soon as the backend reports the add-on unowned, unavailable or
+   * failed.
+   */
+  private get provisionalAddonTheme(): Theme | null {
+    const id = this.pendingAddonThemeId;
+    if (!id || this.activeThemeId !== "system") return null;
+    const entry = ADDON_CATALOG.find((e) => e.id === id);
+    if (!entry) return null;
+    const state = this.addons.statuses[id]?.state;
+    const undecided = state === undefined || state === "purchasing" || state === "downloading" || state === "owned";
+    return undecided ? { id: entry.id, name: entry.name, colors: entry.colors } : null;
+  }
+
   get currentTheme(): Theme {
+    const provisional = this.provisionalAddonTheme;
+    if (provisional) return provisional;
     const predefined = PREDEFINED_THEMES.find(t => t.id === this.activeThemeId);
     if (predefined) return predefined;
     const custom = this.customThemes.find(t => t.id === this.activeThemeId);
-    return custom || PREDEFINED_THEMES.find(t => t.id === "system") || PREDEFINED_THEMES[0];
+    if (custom) return custom;
+    const addon = this.addons.isUsable(this.activeThemeId) ? this.addons.asTheme(this.activeThemeId) : undefined;
+    return addon || PREDEFINED_THEMES.find(t => t.id === "system") || PREDEFINED_THEMES[0];
+  }
+
+  /** The active add-on theme when one is selected and usable, else null. */
+  get activeAddon(): AddonTheme | null {
+    return this.addons.isUsable(this.activeThemeId) ? this.addons.themes[this.activeThemeId] : null;
+  }
+
+  private isBuiltInThemeId(themeId: string): boolean {
+    return PREDEFINED_THEMES.some(t => t.id === themeId) || this.customThemes.some(t => t.id === themeId);
+  }
+
+  /**
+   * Keeps the active theme honest as add-on ownership changes: re-applies a
+   * pending add-on theme once it is owned, and falls back to System (in
+   * memory only — the saved choice stays) when the active one stops being
+   * usable, e.g. a refund or a revoked key.
+   */
+  reconcileAddonTheme() {
+    const pending = this.pendingAddonThemeId;
+    if (pending && this.addons.isUsable(pending)) {
+      this.pendingAddonThemeId = null;
+      this.activeThemeId = pending;
+      this.applyActiveTheme();
+      return;
+    }
+    const active = this.activeThemeId;
+    if (!this.isBuiltInThemeId(active) && !this.addons.isUsable(active)) {
+      this.pendingAddonThemeId = active;
+      this.activeThemeId = "system";
+      this.applyActiveTheme();
+      return;
+    }
+    // The provisional palette ends when the backend rules the add-on unowned,
+    // unavailable or failed; repaint only then, as each repaint crossfades.
+    if (this.paintedProvisional && this.provisionalAddonTheme === null) this.applyActiveTheme();
   }
 
   /**
@@ -672,11 +766,12 @@ export class ThemeStore {
         ...getArtworkTextColors(artColors)
       };
     }
-    return theme.colors;
+    return theme.isCustom ? withReadableText(theme.colors) : theme.colors;
   }
 
   async setTheme(themeId: string) {
-    if (PREDEFINED_THEMES.some(t => t.id === themeId) || this.customThemes.some(t => t.id === themeId)) {
+    if (this.isBuiltInThemeId(themeId) || this.addons.isUsable(themeId)) {
+      this.pendingAddonThemeId = null;
       this.activeThemeId = themeId;
       this.applyActiveTheme();
       await invoke("set_app_setting", { key: "active_theme_id", value: themeId });
@@ -690,6 +785,7 @@ export class ThemeStore {
     } else {
       this.customThemes.push(theme);
     }
+    this.pendingAddonThemeId = null;
     this.activeThemeId = theme.id;
     this.applyActiveTheme();
 
@@ -961,6 +1057,7 @@ export class ThemeStore {
 
   private writeActiveTheme(skipApplyArtworkColors: boolean) {
     const theme = this.currentTheme;
+    this.paintedProvisional = this.provisionalAddonTheme !== null;
 
     // updateArtworkColors() only re-extracts/applies colors on a song
     // change (see player.svelte.ts), so switching *to* Dynamic Artwork
@@ -978,7 +1075,7 @@ export class ThemeStore {
     // the static preview colors on the theme entry.
     const colors = isLuminous
       ? (this.effectiveColorScheme === "dark" ? LUMINOUS_DARK_COLORS : LUMINOUS_LIGHT_COLORS)
-      : theme.colors;
+      : theme.isCustom ? withReadableText(theme.colors) : theme.colors;
 
     // Heuristically derived, not hand-picked: text rendered directly on
     // the accent color (active nav items, filled buttons) needs contrast

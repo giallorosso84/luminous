@@ -4,6 +4,8 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { i18n } from "../stores/i18n.svelte";
   import { toastStore } from "../stores/toast.svelte";
+  import { organizeStore } from "../stores/organizer.svelte";
+  import { TOAST_DURATION_MS } from "../constants";
   import { portal } from "../utils/portal";
   import {
     XIcon as X,
@@ -72,17 +74,18 @@
 
   const DEFAULT_TEMPLATE = "%albumartist/{%year - }{%album/}{%disc-}{%track }%title";
   const VARIABLE_CHIPS = [
-    { label: "%albumartist", desc: "Album Artist" },
-    { label: "%artist", desc: "Artist" },
-    { label: "%album", desc: "Album" },
-    { label: "{%album/}", desc: "Optional Album Folder" },
-    { label: "/", desc: "Folder Separator" },
-    { label: "{%disc-}", desc: "Conditional Disc Prefix" },
-    { label: "%track", desc: "Track # (2-digit padding: 01, 09, 11). Alternatives: %track3 (3-digit: 001), %rawtrack (unpadded: 1)" },
-    { label: "{%track }", desc: "Optional Track # (2-digit padding). Alternatives: {%track3 }, {%rawtrack }" },
-    { label: "%title", desc: "Title" },
-    { label: "%year", desc: "Year" },
-    { label: "%genre", desc: "Genre" },
+    { label: "%albumartist", descKey: "organizer.chipAlbumArtist" },
+    { label: "%artist", descKey: "organizer.chipArtist" },
+    { label: "%album", descKey: "organizer.chipAlbum" },
+    { label: "{%album/}", descKey: "organizer.chipOptionalAlbumFolder" },
+    { label: "/", descKey: "organizer.chipFolderSeparator" },
+    { label: "{%disc-}", descKey: "organizer.chipConditionalDisc" },
+    { label: "%track", descKey: "organizer.chipTrack" },
+    { label: "{%track }", descKey: "organizer.chipOptionalTrack" },
+    { label: "{%track. }", descKey: "organizer.chipOptionalTrackDot" },
+    { label: "%title", descKey: "organizer.chipTitle" },
+    { label: "%year", descKey: "organizer.chipYear" },
+    { label: "%genre", descKey: "organizer.chipGenre" },
   ];
 
   function highlightPathHtml(path: string): string {
@@ -101,7 +104,7 @@
   // extending TEMPLATE_PRESETS.
   const TEMPLATE_PRESETS = [
     { id: "default", labelKey: "organizer.presetDefault", template: DEFAULT_TEMPLATE },
-    { id: "alternative", labelKey: "organizer.presetAlternative", template: "%artist/%album (%year)/{CD %disc/}%track-%artist-%title" },
+    { id: "alternative", labelKey: "organizer.presetAlternative", template: "%artist/%album (%year)/{CD %disc/}{%track-}%artist-%title" },
   ] as const;
   type TemplatePresetId = (typeof TEMPLATE_PRESETS)[number]["id"] | "custom";
 
@@ -135,13 +138,16 @@
     year: number;
     genre: string;
     disc?: number;
-    track: number;
+    track?: number;
     title: string;
   }
   const PREVIEW_SAMPLES: PreviewSample[] = [
     { albumArtist: "Radiohead", artist: "Radiohead", album: "OK Computer", year: 1997, genre: "Alternative Rock", track: 1, title: "Airbag" },
     { albumArtist: "Radiohead", artist: "Radiohead", album: "OK Computer", year: 1997, genre: "Alternative Rock", track: 2, title: "Paranoid Android" },
     { albumArtist: "Daft Punk", artist: "Daft Punk", album: "Discovery", year: 2001, genre: "Electronic", track: 1, title: "One More Time" },
+    // A track with no track number to demonstrate conditional track wrapping
+    // ({%track }, {%track-}) omitting leading spaces or hyphens.
+    { albumArtist: "Daft Punk", artist: "Daft Punk", album: "Aerodynamic", year: 2001, genre: "Electronic", title: "Aerodynamic (Remix)" },
     // A multi-disc album so the preview demonstrates the conditional
     // {CD %disc/} / {%disc-} blocks splitting into per-disc folders/prefixes.
     { albumArtist: "Pink Floyd", artist: "Pink Floyd", album: "The Wall", year: 1979, genre: "Rock", disc: 1, track: 1, title: "In The Flesh?" },
@@ -172,15 +178,16 @@
       expanded = expanded.slice(0, start) + (shouldRender ? block : "") + expanded.slice(end + 1);
     }
 
-    const track2 = String(s.track).padStart(2, "0");
-    const track3 = String(s.track).padStart(3, "0");
+    const track2 = s.track ? String(s.track).padStart(2, "0") : "00";
+    const track3 = s.track ? String(s.track).padStart(3, "0") : "000";
+    const rawtrack = s.track ? String(s.track) : "0";
     expanded = expanded
       .split("%albumartist").join(s.albumArtist)
       .split("%artist").join(s.artist)
       .split("%album").join(s.album)
       .split("%disc").join(String(s.disc ?? 1))
       .split("%track3").join(track3)
-      .split("%rawtrack").join(String(s.track))
+      .split("%rawtrack").join(rawtrack)
       .split("%track").join(track2)
       .split("%title").join(s.title)
       .split("%year").join(String(s.year))
@@ -232,6 +239,39 @@
   let destinationMode = $state<"original" | "custom">("original");
   let customDestinationDir = $state<string>("");
   let destinationDir = $derived(destinationMode === "custom" ? customDestinationDir : "");
+
+  let initializedFromStore = false;
+  $effect(() => {
+    if (organizeStore.isLoaded && !initializedFromStore) {
+      initializedFromStore = true;
+      templatePreset = (organizeStore.preset as TemplatePresetId) || "default";
+      if (organizeStore.preset === "custom") {
+        customTemplate = organizeStore.template || DEFAULT_TEMPLATE;
+      }
+      replaceSpaces = organizeStore.replaceSpaces;
+      asciiOnly = organizeStore.asciiOnly;
+      cleanEmptyDirs = organizeStore.cleanEmptyDirs;
+      moveExtraFiles = organizeStore.moveExtraFiles;
+      destinationMode = organizeStore.destinationMode;
+      customDestinationDir = organizeStore.customDestinationDir;
+    }
+  });
+
+  $effect(() => {
+    const cfg = {
+      template,
+      preset: templatePreset,
+      destination_mode: destinationMode,
+      custom_destination_dir: customDestinationDir,
+      replace_spaces: replaceSpaces,
+      ascii_only: asciiOnly,
+      clean_empty_dirs: cleanEmptyDirs,
+      move_extra_files: moveExtraFiles,
+    };
+    if (initializedFromStore && organizeStore.isLoaded) {
+      organizeStore.updateConfig(cfg);
+    }
+  });
 
   $effect(() => {
     if (effectiveOpen) {
@@ -440,7 +480,7 @@
       items = res;
     } catch (err: any) {
       console.error("Preview failed:", err);
-      errorMessage = typeof err === "string" ? err : err.message || "Failed to generate preview";
+      errorMessage = typeof err === "string" ? err : err.message || i18n.t("organizer.previewFailed");
       items = [];
     } finally {
       isLoading = false;
@@ -497,16 +537,15 @@
       if (result.errors && result.errors.length > 0) {
         errorMessage = result.errors.join("; ");
         toastStore.show(
-          i18n.t("organizer.toastErrors", { count: result.errors.length }, `${result.errors.length} file(s) couldn't be organized`),
+          i18n.t("organizer.toastErrors", { count: result.errors.length }),
           "warning"
         );
       } else {
-        successMessage = result.moved_count === 1 ? i18n.t("organizer.applySuccessOne") : i18n.t("organizer.applySuccessMany", { count: result.moved_count });
+        successMessage = i18n.plural("organizer.applySuccess", result.moved_count);
         toastStore.show(
-          result.moved_count === 1
-            ? i18n.t("organizer.toastSuccessOne", {}, "1 file organized successfully")
-            : i18n.t("organizer.toastSuccessMany", { count: result.moved_count }, `${result.moved_count} files organized successfully`),
-          "success"
+          i18n.plural("organizer.applySuccess", result.moved_count),
+          "success",
+          TOAST_DURATION_MS
         );
         onSuccess?.();
         // Leave the modal open so the user can see the result — refresh the
@@ -515,7 +554,7 @@
       }
     } catch (err: any) {
       console.error("Failed to apply organize:", err);
-      errorMessage = typeof err === "string" ? err : err.message || "Failed to organize files";
+      errorMessage = typeof err === "string" ? err : err.message || i18n.t("organizer.organizeFailed");
     } finally {
       isApplying = false;
     }
@@ -571,7 +610,7 @@
 
 {#snippet templateSection()}
   <div class="space-y-4">
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="grid grid-cols-1 @xl:grid-cols-3 gap-3">
       {#each TEMPLATE_PRESETS as preset (preset.id)}
         <button
           type="button"
@@ -616,9 +655,9 @@
               type="button"
               onclick={() => insertChip(chip.label)}
               class="px-2 py-0.5 rounded-lg text-[11px] font-mono transition-colors border bg-brand-sidebar hover:bg-brand-accent/15 border-brand-border/80 text-brand-text-primary hover:text-brand-accent-text font-medium"
-              title={chip.desc}
+              title={i18n.t(chip.descKey)}
             >
-              {chip.label === '/' ? '/ (Folder)' : chip.label}
+              {chip.label === '/' ? i18n.t('organizer.chipFolderLabel') : chip.label}
             </button>
           {/each}
         </div>

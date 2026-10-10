@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { AudioPipelineInfo } from '$lib/types';
-  import { i18n, formatNumber } from '$lib/stores/i18n.svelte';
+  import type { AudioPipelineInfo, LoudnessGainSource } from '../types';
+  import { i18n, formatNumber } from '../stores/i18n.svelte';
   import {
     CpuIcon as Cpu,
     SlidersIcon as Sliders,
@@ -15,17 +15,36 @@
 
   let { pipeline, class: className = '' }: Props = $props();
 
+  /** The backend reports the EQ mode as an English string; show the localized name. */
+  function eqModeLabel(mode?: string): string {
+    if (mode === 'Parametric') return i18n.t('equalizer.modeParametric', {}, 'Parametric');
+    if (mode === '10-band Graphic') return i18n.t('audioPipeline.eqModeGraphic', {}, '10-band Graphic');
+    return mode || i18n.t('common.active', {}, 'Active');
+  }
+
+  const LOUDNESS_SOURCE_KEYS: Record<LoudnessGainSource, string> = {
+    disabled: 'audioPipeline.normalizationDisabled',
+    analyzed: 'playerBar.loudnessSourceAnalyzed',
+    replay_gain: 'playerBar.loudnessSourceReplayGain',
+    dynamic_range_log: 'playerBar.loudnessSourceDynamicRangeLog',
+    fallback: 'playerBar.loudnessSourceFallback',
+  };
+
+  function loudnessSourceLabel(source: LoudnessGainSource): string {
+    return i18n.t(LOUDNESS_SOURCE_KEYS[source], {}, source);
+  }
+
   function formatChannels(channels?: number): string {
-    if (!channels) return 'Stereo (2 ch)';
-    if (channels === 1) return 'Mono (1 ch)';
-    if (channels === 2) return 'Stereo (2 ch)';
-    return `${channels} ch`;
+    if (!channels) return i18n.t('audioPipeline.channelsStereo');
+    if (channels === 1) return i18n.t('audioPipeline.channelsMono');
+    if (channels === 2) return i18n.t('audioPipeline.channelsStereo');
+    return i18n.t('audioPipeline.channelsCount', { count: channels });
   }
 
   function formatSampleRate(rate?: number): string {
     if (!rate) return '—';
     const digits = rate % 1000 === 0 ? 0 : 1;
-    return `${formatNumber(rate / 1000, { minimumFractionDigits: digits, maximumFractionDigits: digits })} kHz`;
+    return `${formatNumber(rate / 1000, { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${i18n.t("units.khz")}`;
   }
 
   function getQualityTierLabel(tier: string): string {
@@ -54,7 +73,7 @@
 <div class={`space-y-4 select-text ${className}`}>
   {#if !pipeline}
     <div class="text-xs text-brand-text-primary py-4 text-center">
-      {i18n.t('playerBar.noSongPlaying', {}, 'No song currently playing')}
+      {i18n.t('playerBar.noSongPlaying')}
     </div>
   {:else}
     <!-- Stage 1: Input -->
@@ -129,7 +148,8 @@
           <span class="text-brand-text-secondary font-medium">{i18n.t('audioPipeline.equalizer', {}, 'Equalizer & DSP')}</span>
           <span class="font-semibold text-right text-brand-text-primary">
             {#if pipeline.eq_enabled}
-              {i18n.t('audioPipeline.equalizerActive', { mode: pipeline.eq_mode || 'Active', bands: pipeline.eq_active_bands_count }, `${pipeline.eq_mode || 'Active'} (${pipeline.eq_active_bands_count} active)`)}
+              {@const eqMode = eqModeLabel(pipeline.eq_mode)}
+              {i18n.t('audioPipeline.equalizerActive', { mode: eqMode, bands: pipeline.eq_active_bands_count }, `${eqMode} (${pipeline.eq_active_bands_count} active)`)}
             {:else}
               {i18n.t('audioPipeline.equalizerDisabled', {}, 'Bypass / Disabled')}
             {/if}
@@ -143,7 +163,8 @@
             {#if pipeline.loudness_source !== 'disabled'}
               {@const gain = pipeline.loudness_gain_db ?? 0}
               {@const formattedGain = `${gain >= 0 ? '+' : ''}${formatNumber(gain, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`}
-              {i18n.t('audioPipeline.normalizationGain', { gain: formattedGain, source: pipeline.loudness_source }, `${formattedGain} dB (${pipeline.loudness_source})`)}
+              {@const source = loudnessSourceLabel(pipeline.loudness_source)}
+              {i18n.t('audioPipeline.normalizationGain', { gain: formattedGain, source }, `${formattedGain} dB (${source})`)}
             {:else}
               {i18n.t('audioPipeline.normalizationDisabled', {}, 'Disabled')}
             {/if}
@@ -182,7 +203,7 @@
         <div class="col-span-2 flex flex-col">
           <span class="text-[10px] uppercase font-semibold text-brand-text-secondary">{i18n.t('audioPipeline.outputDevice', {}, 'Device')}</span>
           <span class="text-brand-text-primary font-semibold wrap-anywhere">
-            {pipeline.output_device_name || 'Default Output Device'}
+            {pipeline.output_device_name || i18n.t('audioPipeline.defaultOutputDevice')}
           </span>
         </div>
 

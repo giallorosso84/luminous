@@ -120,12 +120,19 @@ pub async fn update_directory_metadata(
 pub async fn scan_directories(
     app: AppHandle,
     force: Option<bool>,
+    reason: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let scanner = CollectionScanner::new(state.db.clone());
     scanner
-        .scan_all(app, force.unwrap_or(false), false)
+        .scan_all(
+            app,
+            force.unwrap_or(false),
+            false,
+            crate::collection::ScanTrigger::from_reason(reason.as_deref()),
+        )
         .await
+        .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
@@ -195,6 +202,7 @@ pub async fn get_library_stats(state: State<'_, AppState>) -> Result<LibraryStat
         .map_err(|e| e.to_string())?;
     stats.album_art_bytes = usage.album_art_bytes as i64;
     stats.artist_art_bytes = usage.artist_art_bytes as i64;
+    stats.thumbnail_bytes = usage.thumbnail_bytes as i64;
     Ok(stats)
 }
 
@@ -1045,7 +1053,7 @@ pub async fn retrieve_album_details(
     // `album.md`/`artist.md` sidecar writes this command can trigger (#1123).
     let _watcher_pause_guard = WatcherPauseGuard::new(Arc::clone(&state.watcher_paused));
     let enrichment_enabled = crate::db::run_blocking(&state.db, |conn| {
-        Ok(crate::commands::context::context_enrichment_enabled(conn))
+        Ok(crate::commands::context::is_online_enabled(conn))
     })
     .await
     .unwrap_or(true);
@@ -1166,6 +1174,9 @@ fn platform_for_artist_rel_type(rel_type: &str, url: &str) -> Option<&'static st
         "bandcamp" => Some("bandcamp"),
         "soundcloud" => Some("soundcloud"),
         "youtube" => Some("youtube"),
+        "songkick" => Some("songkick"),
+        "setlistfm" => Some("setlistfm"),
+        "bandsintown" => Some("bandsintown"),
         "social network" => platform_for_social_network_url(url),
         _ => None,
     }
@@ -1309,7 +1320,7 @@ pub async fn retrieve_artist_details(
     // `artist.md` sidecar write this command triggers (#1123).
     let _watcher_pause_guard = WatcherPauseGuard::new(Arc::clone(&state.watcher_paused));
     let enrichment_enabled = crate::db::run_blocking(&state.db, |conn| {
-        Ok(crate::commands::context::context_enrichment_enabled(conn))
+        Ok(crate::commands::context::is_online_enabled(conn))
     })
     .await
     .unwrap_or(true);
@@ -1428,7 +1439,18 @@ pub async fn has_fanart_env_key() -> Result<bool, String> {
 /// ListenBrainz token field's validate-before-persist flow. The key is only
 /// saved into `UiPreferences` by the frontend after this succeeds.
 #[tauri::command]
-pub async fn validate_fanart_api_key(api_key: String) -> Result<(), String> {
+pub async fn validate_fanart_api_key(
+    api_key: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !crate::db::run_blocking(&state.db, |conn| {
+        Ok(crate::commands::context::is_online_enabled(conn))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    {
+        return Err(crate::commands::context::OFFLINE_ERROR.to_string());
+    }
     let client = crate::artist_image::new_http_client().map_err(|e| e.to_string())?;
     crate::artist_image::validate_fanart_api_key(&client, &api_key)
         .await
@@ -1524,7 +1546,7 @@ pub async fn retrieve_artist_image(
     let only_missing = only_missing.unwrap_or(false);
     let (enrichment_enabled, prefs) = crate::db::run_blocking(&state.db, |conn| {
         Ok((
-            crate::commands::context::context_enrichment_enabled(conn),
+            crate::commands::context::is_online_enabled(conn),
             crate::commands::settings::load_ui_preferences(conn),
         ))
     })
@@ -1801,7 +1823,7 @@ pub async fn retrieve_album_art(
     let only_missing = only_missing.unwrap_or(false);
     let (enrichment_enabled, prefs) = crate::db::run_blocking(&state.db, |conn| {
         Ok((
-            crate::commands::context::context_enrichment_enabled(conn),
+            crate::commands::context::is_online_enabled(conn),
             crate::commands::settings::load_ui_preferences(conn),
         ))
     })

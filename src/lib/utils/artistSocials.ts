@@ -1,4 +1,5 @@
 import type { ArtistSocialLink } from "../types";
+import { i18n } from "../stores/i18n.svelte";
 
 export interface SocialPlatformInfo {
   id: string;
@@ -127,6 +128,24 @@ export const SOCIAL_PLATFORMS: SocialPlatformInfo[] = [
     example: "https://www.imdb.com/name/nm0876013",
   },
   {
+    id: "songkick",
+    label: "Songkick",
+    placeholder: "https://www.songkick.com/artists/...",
+    example: "https://www.songkick.com/artists/253846",
+  },
+  {
+    id: "setlistfm",
+    label: "Setlist.fm",
+    placeholder: "https://www.setlist.fm/setlists/...",
+    example: "https://www.setlist.fm/setlists/radiohead-bd6bd12.html",
+  },
+  {
+    id: "bandsintown",
+    label: "Bandsintown",
+    placeholder: "https://www.bandsintown.com/a/...",
+    example: "https://www.bandsintown.com/a/438314",
+  },
+  {
     id: "custom",
     label: "Custom Link",
     placeholder: "https://...",
@@ -134,11 +153,31 @@ export const SOCIAL_PLATFORMS: SocialPlatformInfo[] = [
   },
 ];
 
+/**
+ * Localizes the few platform labels and placeholders that are descriptions
+ * rather than site names ("Lyrics", "Other Databases"); site names such as
+ * Bandcamp or Discogs stay as they are.
+ */
+export function localizePlatform(info: SocialPlatformInfo): SocialPlatformInfo {
+  switch (info.id) {
+    case "lyrics":
+      return { ...info, label: i18n.t("socialPlatforms.lyrics"), placeholder: i18n.t("socialPlatforms.lyricsPlaceholder") };
+    case "other_databases":
+      return { ...info, label: i18n.t("socialPlatforms.otherDatabases"), placeholder: i18n.t("socialPlatforms.otherDatabasesPlaceholder") };
+    case "custom":
+      return info.placeholder.includes("e.g.")
+        ? { ...info, placeholder: i18n.t("socialPlatforms.customPlaceholder") }
+        : info;
+    default:
+      return info;
+  }
+}
+
 export function getPlatformInfo(platformId: string): SocialPlatformInfo {
   const found =
     SOCIAL_PLATFORMS.find((p) => p.id === platformId) ??
     ALBUM_LINK_PLATFORMS.find((p) => p.id === platformId);
-  if (found) return found;
+  if (found) return localizePlatform(found);
   return {
     id: platformId,
     label: platformId.charAt(0).toUpperCase() + platformId.slice(1),
@@ -174,6 +213,9 @@ export function resolveSocialUrl(platformId: string, input: string): string {
     case "musicbrainz":
     case "discogs":
     case "wikipedia":
+    case "songkick":
+    case "setlistfm":
+    case "bandsintown":
       return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
 
     case "bandcamp":
@@ -282,6 +324,9 @@ const KNOWN_FIXED_PLATFORMS = new Set([
   "wikidata",
   "imdb",
   "listenbrainz",
+  "songkick",
+  "setlistfm",
+  "bandsintown",
 ]);
 
 /**
@@ -395,6 +440,11 @@ export function resolveArtistMbid(
 /** Derives a MusicBrainz artist page URL from a resolved MBID (#1123). */
 export function deriveMusicbrainzArtistUrl(mbid: string | null | undefined): string | null {
   return mbid ? `https://musicbrainz.org/artist/${mbid}` : null;
+}
+
+/** Derives a MusicBrainz artist events page URL from a resolved MBID (#1431). */
+export function deriveMusicbrainzEventsUrl(mbid: string | null | undefined): string | null {
+  return mbid ? `https://musicbrainz.org/artist/${mbid}/events` : null;
 }
 
 /** Derives a ListenBrainz artist page URL from a resolved MBID (#1123). */

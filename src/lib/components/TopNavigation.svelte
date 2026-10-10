@@ -96,7 +96,7 @@
         type: "auto",
         id: "auto:favourites",
         label: favLabel,
-        subtitle: i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist"),
+        subtitle: i18n.t("playlists.autoPlaylistLabel"),
         ref: { kind: "favourites" }
       });
     }
@@ -107,7 +107,7 @@
         type: "auto",
         id: "auto:recently_added",
         label: recLabel,
-        subtitle: i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist"),
+        subtitle: i18n.t("playlists.autoPlaylistLabel"),
         ref: { kind: "recently_added" }
       });
     }
@@ -118,7 +118,7 @@
         type: "auto",
         id: "auto:history",
         label: histLabel,
-        subtitle: i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist"),
+        subtitle: i18n.t("playlists.autoPlaylistLabel"),
         ref: { kind: "history" }
       });
     }
@@ -137,7 +137,7 @@
               type: "auto",
               id: `auto:decade:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • Decade`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.decadeAutoPlaylist")}`,
               ref: { kind: "decade", decade, playlistId: p.id, updated: p.updated }
             });
           } else if (p.dynamic_spec?.startsWith("bpmrange:")) {
@@ -146,7 +146,7 @@
               type: "auto",
               id: `auto:bpm:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • BPM`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.bpmAutoPlaylist")}`,
               ref: { kind: "bpm", bpm, playlistId: p.id, updated: p.updated }
             });
           } else if (p.dynamic_spec?.startsWith("artisttag:")) {
@@ -155,7 +155,7 @@
               type: "auto",
               id: `auto:artist_tag:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • Artist Tag`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.artistTagAutoPlaylist")}`,
               ref: { kind: "artist_tag", artistTag, playlistId: p.id, updated: p.updated }
             });
           } else if (p.dynamic_spec === "missingmeta") {
@@ -163,7 +163,7 @@
               type: "auto",
               id: `auto:missing_metadata:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • Missing Metadata`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.missingMetadataAutoPlaylist")}`,
               ref: { kind: "missing_metadata", playlistId: p.id, updated: p.updated }
             });
           } else if (p.dynamic_spec === "missingmbid") {
@@ -180,7 +180,7 @@
               type: "auto",
               id: `auto:daypart:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • Daypart Mix`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.daypartAutoPlaylist")}`,
               ref: { kind: "daypart", playlistId: p.id, updated: p.updated }
             });
           } else {
@@ -189,7 +189,7 @@
               type: "auto",
               id: `auto:genre:${p.id}`,
               label: getPlaylistDisplayName(p),
-              subtitle: `${i18n.t("playlists.autoPlaylistLabel", {}, "Auto-Playlist")} • Genre`,
+              subtitle: `${i18n.t("playlists.autoPlaylistLabel")} • ${i18n.t("playlists.genreAutoPlaylist")}`,
               ref: { kind: "genre", genre, playlistId: p.id, updated: p.updated }
             });
           }
@@ -198,7 +198,7 @@
             type: "custom",
             id: p.id,
             label: p.name,
-            subtitle: i18n.t("playlists.playlistLabel", {}, "Playlist")
+            subtitle: i18n.t("playlists.playlistTypeLabel")
           });
         }
       }
@@ -351,7 +351,7 @@
         <div class="animate-spin rounded-full h-4 w-4 border-2 border-brand-accent border-t-transparent flex-shrink-0" title={i18n.t('topNav.searching')}></div>
       {:else if collectionStore.searchQuery}
         <span class="text-[10px] bg-brand-border/60 px-1.5 py-0.5 rounded text-brand-text-secondary font-mono flex-shrink-0 select-none">
-          {i18n.t('topNav.tracksCount', { count: collectionStore.searchResults.length })}
+          {i18n.plural("topNav.tracksCount", collectionStore.searchResults.length)}
         </span>
         <button
           type="button"
@@ -404,7 +404,7 @@
             <div class="space-y-0.5 text-[11px]">
               <div><span class="font-medium text-brand-text-primary">{i18n.t('topNav.filterFieldsLabel')}</span> <code class="bg-brand-sidebar px-1 rounded">artist</code>, <code class="bg-brand-sidebar px-1 rounded">album</code>, <code class="bg-brand-sidebar px-1 rounded">title</code>, <code class="bg-brand-sidebar px-1 rounded">genre</code>, <code class="bg-brand-sidebar px-1 rounded">year</code>, <code class="bg-brand-sidebar px-1 rounded">rating</code>, <code class="bg-brand-sidebar px-1 rounded">duration</code>, <code class="bg-brand-sidebar px-1 rounded">playcount</code></div>
               <div><span class="font-medium text-brand-text-primary">{i18n.t('topNav.filterOperatorsLabel')}</span> <code class="bg-brand-sidebar px-1 rounded">=</code> <code class="bg-brand-sidebar px-1 rounded">!=</code> <code class="bg-brand-sidebar px-1 rounded">&gt;</code> <code class="bg-brand-sidebar px-1 rounded">&gt;=</code> <code class="bg-brand-sidebar px-1 rounded">&lt;</code> <code class="bg-brand-sidebar px-1 rounded">&lt;=</code></div>
-              <div class="text-brand-text-secondary/60 italic pt-0.5">e.g. rating:&gt;=4 year:&lt;2000 genre:jazz "miles davis"</div>
+              <div class="text-brand-text-secondary/60 italic pt-0.5">{i18n.t("topNav.filterExample")}</div>
             </div>
           </div>
         {/if}
@@ -438,7 +438,7 @@
                         collectionStore.addRecentSearch({
                           kind: "artist",
                           title: artist.name,
-                          subtitle: i18n.t('artistDetail.artistLabel', {}, 'Artist'),
+                          subtitle: i18n.t('playerBar.artistLabel'),
                           query: artist.name
                         });
                         isSearchFocused = false;
@@ -474,7 +474,7 @@
                           {artist.name}
                         </span>
                         <span class="text-xs text-brand-text-secondary/70 truncate">
-                          {i18n.t('artistDetail.artistLabel', {}, 'Artist')}
+                          {i18n.t('playerBar.artistLabel')}
                         </span>
                       </div>
                     </div>
@@ -491,7 +491,7 @@
                         collectionStore.addRecentSearch({
                           kind: "album",
                           title: album.album,
-                          subtitle: `${i18n.t('collection.albumLabel', {}, 'Album')} • ${album.artist || i18n.t('collection.unknownArtist')}`,
+                          subtitle: `${i18n.t('playerBar.albumLabel')} • ${album.artist || i18n.t('collection.unknownArtist')}`,
                           query: album.album,
                           artUrl: album.art_manual || album.art_automatic
                         });
@@ -522,7 +522,7 @@
                           {album.album}
                         </span>
                         <span class="text-xs text-brand-text-secondary/70 truncate">
-                          {i18n.t('collection.albumLabel', {}, 'Album')} • {album.artist || i18n.t('collection.unknownArtist')}
+                          {i18n.t('playerBar.albumLabel')} • {album.artist || i18n.t('collection.unknownArtist')}
                         </span>
                       </div>
                     </div>
@@ -596,7 +596,7 @@
                       collectionStore.addRecentSearch({
                         kind: "song",
                         title: songTitle,
-                        subtitle: `${i18n.t('collection.songLabel', {}, 'Song')} • ${song.artist || i18n.t('collection.unknownArtist')}`,
+                        subtitle: `${i18n.t('playerBar.songLabel')} • ${song.artist || i18n.t('collection.unknownArtist')}`,
                         query: song.album || songTitle,
                         artUrl: song.art_manual || song.art_automatic,
                         entityId: song.id
@@ -627,7 +627,7 @@
                           {song.title || i18n.t('collection.unknownSong')}
                         </span>
                         <span class="text-xs text-brand-text-secondary/70 truncate">
-                          {i18n.t('collection.songLabel', {}, 'Song')} • {song.artist || i18n.t('collection.unknownArtist')}
+                          {i18n.t('playerBar.songLabel')} • {song.artist || i18n.t('collection.unknownArtist')}
                         </span>
                       </div>
                     </div>

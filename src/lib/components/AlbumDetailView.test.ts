@@ -12,9 +12,15 @@ import { tasksStore } from "../stores/tasks.svelte";
 import { toastStore } from "../stores/toast.svelte";
 import { statsExclusionsStore } from "../stores/statsExclusions.svelte";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { tick } from "svelte";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -219,6 +225,76 @@ describe("AlbumDetailView.svelte - Play vs Shuffle Play Queue navigation", () =>
 
     await fireEvent.click(picardItem);
     expect(invoke).toHaveBeenCalledWith("open_in_picard", { songIds: [1, 2] });
+  });
+
+  it("opens the album's CritiqueBrainz release group page from the overflow menu (#1387)", async () => {
+    // The test hands the component its songs and awaits the same promise: the
+    // component's own `.then` was registered first, so it has run by the time
+    // this await returns, and tick() renders the result. No polling.
+    const songs = Promise.resolve([{ ...mockSongs[0], musicbrainz_release_group_id: "rg-123" }]);
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => (cmd === "get_songs_by_album" ? songs : []));
+    const { getByTitle, getByText } = render(AlbumDetailView, { props: { albumName: mockAlbumName } });
+    await songs;
+    await tick();
+
+    await fireEvent.click(getByTitle("More actions"));
+    const item = getByText("Review on CritiqueBrainz");
+    // Enabled only once the album's songs (and their MBID) have loaded.
+    expect(item.closest("button")).not.toBeDisabled();
+    await fireEvent.click(item);
+    expect(openUrl).toHaveBeenCalledWith("https://critiquebrainz.org/release-group/rg-123");
+  });
+
+  it("disables Review on CritiqueBrainz when no release group MBID is tagged (#1387)", async () => {
+    const { findByTitle, findByText } = render(AlbumDetailView, { props: { albumName: mockAlbumName } });
+    // Wait for the album's songs to be requested, so "disabled" is the answer to a loaded album.
+    await vi.waitFor(() =>
+      expect(vi.mocked(invoke).mock.calls.map((call) => call[0])).toContain("get_songs_by_album")
+    );
+    await fireEvent.click(await findByTitle("More actions"));
+    const item = await findByText("Review on CritiqueBrainz");
+    expect(item.closest("button")).toBeDisabled();
+  });
+
+  it("shows the CritiqueBrainz community rating in place of the Album Info title (#1387)", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_songs_by_album") return [{ ...mockSongs[0], musicbrainz_release_group_id: "rg-123" }];
+      if (cmd === "get_song_context") return { critiquebrainz_rating: 4.2, critiquebrainz_review_count: 7, critiquebrainz_review_links: [] };
+      return [];
+    });
+    collectionStore.albumProfiles = {
+      "abbey road": { album_key: "abbey road", artist_key: "the beatles", description: "Classic album", links: [] },
+    };
+    const { findByText } = render(AlbumDetailView, { props: { albumName: mockAlbumName } });
+    expect(await findByText("(7)")).toBeInTheDocument();
+  });
+
+  it("shows the community rating on its own when the album has no Album Info content (#1387)", async () => {
+    collectionStore.albumProfiles = {};
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_songs_by_album") return [{ ...mockSongs[0], musicbrainz_release_group_id: "rg-123" }];
+      if (cmd === "get_song_context") return { critiquebrainz_rating: 3.5, critiquebrainz_review_count: 2, critiquebrainz_review_links: [] };
+      return [];
+    });
+    const { findByText } = render(AlbumDetailView, { props: { albumName: mockAlbumName } });
+    expect(await findByText("(2)")).toBeInTheDocument();
+  });
+
+  it("falls back to the MusicBrainz community rating when CritiqueBrainz has no rating (#1571)", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_songs_by_album") return [{ ...mockSongs[0], musicbrainz_release_group_id: "rg-123" }];
+      if (cmd === "get_song_context") return { mb_rating: 3.75, mb_rating_votes: 4, critiquebrainz_rating: null, critiquebrainz_review_links: [] };
+      return [];
+    });
+    collectionStore.albumProfiles = {
+      "abbey road": { album_key: "abbey road", artist_key: "the beatles", description: "Classic album", links: [] },
+    };
+    const { findByText, findByTitle } = render(AlbumDetailView, { props: { albumName: mockAlbumName } });
+    expect(await findByText("(4)")).toBeInTheDocument();
+    const btn = await findByTitle("Open this album on MusicBrainz");
+    expect(btn).toBeInTheDocument();
+    await fireEvent.click(btn);
+    expect(openUrl).toHaveBeenCalledWith("https://musicbrainz.org/release-group/rg-123");
   });
 
   it("toggles album stats exclusion from the overflow menu (#1252)", async () => {

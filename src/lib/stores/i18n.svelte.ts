@@ -1,21 +1,41 @@
-import { en } from '../locales/en';
-import { fr } from '../locales/fr';
+import {
+  BASE_LOCALE,
+  catalogChain,
+  isLocale,
+  legacyLanguageToLocale,
+  manualLanguageForLocale,
+  type Locale,
+  type ManualLanguage,
+} from '../locales';
 import { invoke } from '@tauri-apps/api/core';
 
-export type Locale = 'en' | 'fr';
+export type { Locale };
 
-const translations = { en, fr };
+/**
+ * Marks that `language` holds a BCP 47 tag. Builds before the locale registry saved bare
+ * "en"/"fr"; without this marker a saved "fr" could not be told apart from a future
+ * France-French tag of the same name, so legacy values are only aliased while it is absent.
+ */
+const LANGUAGE_TAGS_KEY = "language_tags";
 
 class I18nStore {
-  currentLocale = $state<Locale>('en');
+  currentLocale = $state<Locale>(BASE_LOCALE);
+
+  /** Language of the user guide the Help view loads. */
+  get manualLanguage(): ManualLanguage {
+    return manualLanguageForLocale(this.currentLocale);
+  }
 
   async init() {
     try {
       const settings = await invoke<Record<string, string>>("get_all_app_settings");
-      if (settings && settings.language) {
-        if (settings.language === "en" || settings.language === "fr") {
-          this.currentLocale = settings.language as Locale;
-        }
+      const saved = settings?.language;
+      const migrating = settings?.[LANGUAGE_TAGS_KEY] !== "1";
+      const locale = saved ? (migrating ? legacyLanguageToLocale(saved) : null) ?? (isLocale(saved) ? saved : null) : null;
+      if (locale) this.currentLocale = locale;
+      if (migrating) {
+        if (locale) void invoke("set_app_setting", { key: "language", value: locale }).catch(() => {});
+        void invoke("set_app_setting", { key: LANGUAGE_TAGS_KEY, value: "1" }).catch(() => {});
       }
     } catch (e) {
       console.error("Failed to load language settings:", e);
@@ -23,6 +43,7 @@ class I18nStore {
       if (typeof document !== 'undefined') {
         document.documentElement.lang = this.currentLocale;
       }
+      this.pushNativeLabels();
     }
   }
 
@@ -31,11 +52,27 @@ class I18nStore {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = locale;
     }
+    this.pushNativeLabels();
     try {
       await invoke("set_app_setting", { key: "language", value: locale });
     } catch (e) {
       console.error("Failed to save language settings:", e);
     }
+  }
+
+  /** Text the backend shows in the tray menu and taskbar buttons; fire-and-forget (see `native_labels.rs`). */
+  private pushNativeLabels() {
+    const labels = {
+      playPause: this.t("tray.playPause"),
+      play: this.t("playerBar.play"),
+      pause: this.t("playerBar.pause"),
+      previous: this.t("playerBar.previous"),
+      next: this.t("playerBar.next"),
+      pauseScrobbling: this.t("listenbrainz.pauseLabel"),
+      showHideWindow: this.t("tray.showHideWindow"),
+      quit: this.t("tray.quit"),
+    };
+    void invoke("set_native_labels", { labels }).catch(() => {});
   }
 
   formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
@@ -44,37 +81,59 @@ class I18nStore {
 
   t(key: string, vars: Record<string, any> = {}, fallback?: string): string {
     const keys = key.split('.');
-    let value: any = translations[this.currentLocale];
-    for (const k of keys) {
-      if (value && typeof value === 'object') {
-        value = value[k];
-      } else {
-        value = undefined;
-        break;
-      }
-    }
-
-    if (value === undefined) {
-      // Fallback to English
-      value = translations['en'];
+    let value: any;
+    for (const catalog of catalogChain(this.currentLocale)) {
+      value = catalog;
       for (const k of keys) {
-        if (value && typeof value === 'object') {
-          value = value[k];
-        } else {
-          value = undefined;
-          break;
-        }
+        value = value && typeof value === 'object' ? value[k] : undefined;
       }
+      if (typeof value === 'string') break;
     }
 
     if (typeof value !== 'string') {
       return fallback !== undefined ? fallback : key;
     }
 
-    return value.replace(/{(\w+)}/g, (_, name) => {
-      return name in vars ? String(vars[name]) : `{${name}}`;
-    });
+    return interpolate(value, vars);
   }
+
+  /**
+   * Counted string: the catalog entry is an object keyed by CLDR plural category
+   * (`one`, `few`, `many`, `other`...) and the category comes from `Intl.PluralRules` for the
+   * current locale, so callers never decide the form. A locale missing the category falls back
+   * to its `other`, then to the next catalog in the chain. `{count}` is the locale-formatted
+   * `count` unless `vars` supplies its own.
+   */
+  plural(key: string, count: number, vars: Record<string, any> = {}, fallback?: string): string {
+    const category = pluralCategory(this.currentLocale, count);
+    const keys = key.split('.');
+    for (const catalog of catalogChain(this.currentLocale)) {
+      let value: any = catalog;
+      for (const k of keys) {
+        value = value && typeof value === 'object' ? value[k] : undefined;
+      }
+      const form = value && typeof value === 'object' ? (value[category] ?? value.other) : undefined;
+      if (typeof form === 'string') return interpolate(form, { count: formatNumber(count), ...vars });
+    }
+    return fallback !== undefined ? fallback : key;
+  }
+}
+
+function interpolate(template: string, vars: Record<string, any>): string {
+  return template.replace(/{(\w+)}/g, (_, name) => {
+    return name in vars ? String(vars[name]) : `{${name}}`;
+  });
+}
+
+const pluralRulesCache = new Map<string, Intl.PluralRules>();
+
+function pluralCategory(locale: string, count: number): Intl.LDMLPluralRule {
+  let rules = pluralRulesCache.get(locale);
+  if (!rules) {
+    rules = new Intl.PluralRules(locale);
+    pluralRulesCache.set(locale, rules);
+  }
+  return rules.select(count);
 }
 
 export const i18n = new I18nStore();
